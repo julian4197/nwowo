@@ -42,13 +42,17 @@ def cmd_login() -> int:
     return 0
 
 
+def _join(remote: str, name: str) -> str:
+    return remote + name if remote.endswith(":") else f"{remote.rstrip('/')}/{name}"
+
+
 def publish(files: list[Path]) -> None:
     remote = os.getenv("RCLONE_REMOTE")  # e.g. "gdrive:Workout-Coach"
     if not remote:
         log.info("RCLONE_REMOTE not set, skipping upload")
         return
     for f in files:
-        subprocess.run(["rclone", "copyto", str(f), f"{remote}/{f.name}"], check=True)
+        subprocess.run(["rclone", "copyto", str(f), _join(remote, f.name)], check=True)
     log.info("Uploaded %s to %s", ", ".join(f.name for f in files), remote)
 
 
@@ -148,23 +152,31 @@ def next_run(now: datetime, times: list[str]) -> datetime:
 
 
 PLAN_PATH = DATA_DIR / "plan.json"
-EMPTY_PLAN = '{"workouts": []}\n'
 
 
 def fetch_plan() -> str | None:
-    """Download plan.json from RCLONE_REMOTE. Creates an empty one there if missing,
-    so the file belongs to rclone (drive.file scope) and the coach can fill it."""
+    """Return the newest plan*.json from RCLONE_REMOTE (by modification time).
+
+    The coach uploads a new file for every plan change (it cannot edit files in
+    place), so the newest one wins. rclone needs the "drive" scope for this,
+    ideally limited to the Workout-Coach folder via root_folder_id.
+    """
     remote = os.getenv("RCLONE_REMOTE")
     if not remote:
         return PLAN_PATH.read_text(encoding="utf-8") if PLAN_PATH.exists() else None
-    r = subprocess.run(["rclone", "cat", f"{remote}/plan.json"], capture_output=True, text=True)
+    r = subprocess.run(["rclone", "lsjson", "--files-only", remote], capture_output=True, text=True)
     if r.returncode != 0:
-        log.info("No plan.json in %s yet, creating an empty one", remote)
-        PLAN_PATH.write_text(EMPTY_PLAN, encoding="utf-8")
-        subprocess.run(["rclone", "copyto", str(PLAN_PATH), f"{remote}/plan.json"], check=True)
-        return EMPTY_PLAN
-    PLAN_PATH.write_text(r.stdout, encoding="utf-8")
-    return r.stdout
+        log.warning("Cannot list %s: %s", remote, r.stderr.strip())
+        return None
+    plans = [f for f in json.loads(r.stdout or "[]")
+             if f.get("Name", "").startswith("plan") and f["Name"].endswith(".json")]
+    if not plans:
+        return None
+    newest = max(plans, key=lambda f: f.get("ModTime", ""))
+    text = subprocess.run(["rclone", "cat", _join(remote, newest["Name"])],
+                          capture_output=True, text=True, check=True).stdout
+    PLAN_PATH.write_text(text, encoding="utf-8")
+    return text
 
 
 def push_plan(text: str) -> dict[str, int]:

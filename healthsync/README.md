@@ -92,8 +92,12 @@ Kalender.
 
 - Geänderte Einheiten werden ersetzt, gestrichene (zukünftige) gelöscht.
 - Workouts, die du selbst in Garmin Connect angelegt hast, bleiben unberührt.
-- Gibt es noch keine `plan.json`, legt der Container eine leere an. Sie muss
-  von rclone stammen, weil rclone nur eigene Dateien sehen darf.
+- Der Coach legt bei jeder Änderung eine neue Datei `plan-<Datum>.json` an;
+  die neueste gewinnt.
+- Dafür braucht rclone Lesezugriff auf Dateien, die es nicht selbst angelegt
+  hat: Remote mit `scope = drive` und `root_folder_id = <ID des Ordners
+  Workout-Coach>` einrichten. Dann sieht rclone nur diesen einen Ordner und
+  `RCLONE_REMOTE=gdrive:` (ohne Ordnernamen) setzen.
 - Von Hand: `docker compose run --rm healthsync push-plan` (oder
   `--file plan.json`). Das Format steht oben in `healthsync/workouts.py`.
 
