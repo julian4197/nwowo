@@ -5,6 +5,7 @@ Commands:
   sync         fetch the last DAYS days once and publish the summary
   backfill     fetch every day since SINCE (oldest first, skips days already stored)
   import-apple import an Apple Health export (export.zip) from /data/inbox
+  push-plan    push plan.json (from Google Drive or --file) to Garmin Connect
   run          stay running and sync at the times in SYNC_TIMES
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import apple, garmin, hae, store, summary
+from . import apple, garmin, hae, store, summary, workouts
 
 log = logging.getLogger("healthsync")
 
@@ -146,7 +147,62 @@ def next_run(now: datetime, times: list[str]) -> datetime:
     return min(candidates)
 
 
+PLAN_PATH = DATA_DIR / "plan.json"
+EMPTY_PLAN = '{"workouts": []}\n'
+
+
+def fetch_plan() -> str | None:
+    """Download plan.json from RCLONE_REMOTE. Creates an empty one there if missing,
+    so the file belongs to rclone (drive.file scope) and the coach can fill it."""
+    remote = os.getenv("RCLONE_REMOTE")
+    if not remote:
+        return PLAN_PATH.read_text(encoding="utf-8") if PLAN_PATH.exists() else None
+    r = subprocess.run(["rclone", "cat", f"{remote}/plan.json"], capture_output=True, text=True)
+    if r.returncode != 0:
+        log.info("No plan.json in %s yet, creating an empty one", remote)
+        PLAN_PATH.write_text(EMPTY_PLAN, encoding="utf-8")
+        subprocess.run(["rclone", "copyto", str(PLAN_PATH), f"{remote}/plan.json"], check=True)
+        return EMPTY_PLAN
+    PLAN_PATH.write_text(r.stdout, encoding="utf-8")
+    return r.stdout
+
+
+def push_plan(text: str) -> dict[str, int]:
+    plan = json.loads(text)
+    con = store.connect(str(DB_PATH))
+    client = garmin.make_client(TOKENSTORE)
+    stats = workouts.push(con, client, plan)
+    con.close()
+    log.info("Plan pushed to Garmin: %s", stats)
+    return stats
+
+
+def cmd_push_plan(path: str | None) -> int:
+    text = Path(path).read_text(encoding="utf-8") if path else fetch_plan()
+    if text is None:
+        print("Kein Plan gefunden.", file=sys.stderr)
+        return 1
+    print(json.dumps(push_plan(text)))
+    return 0
+
+
+def plan_watcher(interval_min: float) -> None:
+    last = None
+    while True:
+        try:
+            text = fetch_plan()
+            if text is not None and text != last:
+                push_plan(text)
+                last = text
+        except Exception:
+            log.exception("Plan push failed, retrying later")
+        time.sleep(interval_min * 60)
+
+
 def cmd_run(days: int) -> int:
+    plan_every = float(os.getenv("PLAN_CHECK_MINUTES", "15"))
+    if plan_every > 0:
+        threading.Thread(target=plan_watcher, args=(plan_every,), daemon=True).start()
     if hae.enabled():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -171,18 +227,20 @@ def cmd_run(days: int) -> int:
 def main() -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(prog="healthsync")
-    p.add_argument("command", choices=["login", "sync", "backfill", "import-apple", "run"])
+    p.add_argument("command", choices=["login", "sync", "backfill", "import-apple", "push-plan", "run"])
     p.add_argument("--days", type=int, default=int(os.getenv("SYNC_DAYS", "3")),
                    help="how many recent days to (re)fetch per sync")
     p.add_argument("--since", type=date.fromisoformat, help="backfill start, e.g. 2019-01-01")
     p.add_argument("--pause", type=float, default=2.0, help="backfill seconds between days")
-    p.add_argument("--file", default=None, help="import-apple: path to export.zip")
+    p.add_argument("--file", default=None, help="import-apple: path to export.zip; push-plan: path to plan.json")
     a = p.parse_args()
     if a.command == "login":
         return cmd_login()
     if a.command == "sync":
         sync(a.days)
         return 0
+    if a.command == "push-plan":
+        return cmd_push_plan(a.file)
     if a.command == "import-apple":
         return cmd_import_apple(a.file)
     if a.command == "backfill":

@@ -179,3 +179,81 @@ def test_apple_import(tmp_path):
     assert con.execute("SELECT COUNT(*) FROM apple_records").fetchone()[0] == 5
     day = store.load_daily(con, "2025-01-01")["2025-06-01"]
     assert day == {"weight_kg": 80.5, "body_fat_pct": 21.0, "kcal_in": 1500.0}
+
+
+PLAN = {"workouts": [
+    {"id": "r1", "date": "2026-11-24", "sport": "running", "name": "5x1000 m",
+     "steps": [
+         {"type": "warmup", "time": "15:00", "target": {"hr_zone": 2}},
+         {"type": "repeat", "times": 5, "steps": [
+             {"type": "interval", "distance_m": 1000, "target": {"pace": "5:00-4:50"}},
+             {"type": "recovery", "time": 120}]},
+         {"type": "cooldown", "time": "10:00", "target": {"hr": [120, 145]}}]},
+    {"id": "k1", "date": "2026-11-25", "sport": "strength", "name": "Kraft A",
+     "steps": [
+         {"exercise": "Goblet Squat", "sets": 3, "reps": 10, "rest": "1:30", "weight_kg": 18, "note": "RIR 2"},
+         {"exercise": "PLANK/PLANK", "sets": 3, "time": "0:45", "rest": "0:45"}]},
+    {"id": "old", "date": "2026-11-01", "sport": "running", "name": "past", "steps": [{"type": "interval"}]},
+]}
+
+
+def test_build_running():
+    from healthsync import workouts as w
+
+    out = w.build(PLAN["workouts"][0])
+    steps = out["workoutSegments"][0]["workoutSteps"]
+    assert [s["stepOrder"] for s in steps] == [1, 2, 5]
+    assert steps[0]["zoneNumber"] == 2
+    rep = steps[1]
+    assert rep["numberOfIterations"] == 5 and [s["stepOrder"] for s in rep["workoutSteps"]] == [3, 4]
+    iv = rep["workoutSteps"][0]
+    assert iv["endConditionValue"] == 1000.0
+    assert iv["targetValueOne"] == round(1000 / 300, 4) and iv["targetValueTwo"] == round(1000 / 290, 4)
+    assert steps[2]["targetValueOne"] == 120.0
+
+
+def test_build_strength():
+    from healthsync import workouts as w
+
+    out = w.build(PLAN["workouts"][1])
+    assert out["sportType"]["sportTypeKey"] == "strength_training"
+    g = out["workoutSegments"][0]["workoutSteps"][0]
+    ex, rest = g["workoutSteps"]
+    assert (ex["category"], ex["exerciseName"]) == ("SQUAT", "GOBLET_SQUAT")
+    assert ex["endCondition"]["conditionTypeKey"] == "reps" and ex["endConditionValue"] == 10
+    assert ex["weightValue"] == 18000 and rest["endConditionValue"] == 90
+    plank = out["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][0]
+    assert plank["endCondition"]["conditionTypeKey"] == "time" and plank["endConditionValue"] == 45
+
+
+class FakeWorkoutClient:
+    def __init__(self):
+        self.next_id, self.workouts, self.scheduled, self.deleted = 100, {}, {}, []
+
+    def upload_workout(self, payload):
+        self.next_id += 1
+        self.workouts[self.next_id] = payload
+        return {"workoutId": self.next_id}
+
+    def schedule_workout(self, wid, d):
+        self.scheduled[wid] = d
+
+    def delete_workout(self, wid):
+        self.deleted.append(wid)
+
+
+def test_push_plan_is_idempotent(tmp_path):
+    import copy
+    from healthsync import workouts as w
+
+    con = store.connect(str(tmp_path / "h.db"))
+    c = FakeWorkoutClient()
+    today = date(2026, 11, 22)
+    assert w.push(con, c, PLAN, today) == {"created": 2, "updated": 0, "deleted": 0, "unchanged": 0}
+    assert c.scheduled == {"101": "2026-11-24", "102": "2026-11-25"}
+    assert w.push(con, c, PLAN, today)["unchanged"] == 2
+    changed = copy.deepcopy(PLAN)
+    changed["workouts"][0]["name"] = "6x1000 m"
+    del changed["workouts"][1]
+    assert w.push(con, c, changed, today) == {"created": 0, "updated": 1, "deleted": 1, "unchanged": 0}
+    assert sorted(c.deleted) == ["101", "102"]

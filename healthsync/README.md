@@ -80,6 +80,23 @@ Die Waage (Zepp Life) und Yazio schreiben in Apple Health. Die iPhone-App
 Das iPhone erreicht die NAS nur im Heimnetz (oder per VPN). Den Port bitte
 nicht ins Internet freigeben.
 
+## Trainingsplan auf die Uhr
+
+Der Coach schreibt den Plan als `plan.json` in den Drive-Ordner
+`Workout-Coach`. Der Container schaut alle `PLAN_CHECK_MINUTES` Minuten
+(Standard 15) nach Änderungen und legt jede Einheit als Workout im
+Garmin-Kalender an: Läufe mit Pace- oder Pulszielen, Intervalle als
+Wiederholungen, Krafteinheiten mit Übung, Sätzen, Wiederholungen, Gewicht und
+Pausen. Nach dem nächsten Sync der Uhr stehen sie dort unter „Training“ bzw. im
+Kalender.
+
+- Geänderte Einheiten werden ersetzt, gestrichene (zukünftige) gelöscht.
+- Workouts, die du selbst in Garmin Connect angelegt hast, bleiben unberührt.
+- Gibt es noch keine `plan.json`, legt der Container eine leere an. Sie muss
+  von rclone stammen, weil rclone nur eigene Dateien sehen darf.
+- Von Hand: `docker compose run --rm healthsync push-plan` (oder
+  `--file plan.json`). Das Format steht oben in `healthsync/workouts.py`.
+
 ## Wenn etwas hakt
 
 - `docker logs healthsync` zeigt jeden Lauf.
