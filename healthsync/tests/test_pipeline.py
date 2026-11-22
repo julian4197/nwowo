@@ -161,7 +161,13 @@ APPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
  <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="YAZIO" unit="kcal" startDate="2025-06-01 08:00:00 +0200" endDate="2025-06-01 08:00:00 +0200" value="600"/>
  <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="YAZIO" unit="kcal" startDate="2025-06-01 19:00:00 +0200" endDate="2025-06-01 19:00:00 +0200" value="900"/>
  <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" startDate="2025-06-01 10:00:00 +0200" endDate="2025-06-01 11:00:00 +0200" value="1200"/>
- <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Connect" startDate="2025-06-01 00:00:00 +0200" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch" startDate="2025-06-01 00:00:00 +0200" endDate="2025-06-01 05:00:00 +0200" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch" startDate="2025-06-01 05:00:00 +0200" endDate="2025-06-01 06:30:00 +0200" value="HKCategoryValueSleepAnalysisAsleepREM"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch" startDate="2025-06-01 06:30:00 +0200" endDate="2025-06-01 07:00:00 +0200" value="HKCategoryValueSleepAnalysisAwake"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" sourceName="Watch" startDate="2025-06-01 18:00:00 +0200" endDate="2025-06-01 18:30:00 +0200">
+  <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceWalkingRunning" startDate="2025-06-01 18:00:00 +0200" endDate="2025-06-01 18:30:00 +0200" sum="5.2" unit="km"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" startDate="2025-06-01 18:00:00 +0200" endDate="2025-06-01 18:30:00 +0200" sum="380" unit="kcal"/>
+ </Workout>
 </HealthData>"""
 
 
@@ -178,7 +184,9 @@ def test_apple_import(tmp_path):
     con = store.connect(db)
     assert con.execute("SELECT COUNT(*) FROM apple_records").fetchone()[0] == 5
     day = store.load_daily(con, "2025-01-01")["2025-06-01"]
-    assert day == {"weight_kg": 80.5, "body_fat_pct": 21.0, "kcal_in": 1500.0}
+    assert day == {"weight_kg": 80.5, "body_fat_pct": 21.0, "kcal_in": 1500.0, "steps": 1200, "sleep_min": 390.0}
+    assert con.execute("SELECT type, duration_min, distance_km, kcal FROM apple_workouts").fetchall() == [("Running", 30.0, 5.2, 380.0)]
+    assert con.execute("SELECT COUNT(*) FROM apple_sleep").fetchone()[0] == 3
 
 
 PLAN = {"workouts": [

@@ -54,7 +54,7 @@ in Apple Health:
    an den Mac, dann `scp export.zip nashorn:/volume1/docker/healthsync/data/inbox/`).
 3. `docker compose run --rm healthsync import-apple`
 
-Jeder Messwert landet in der Tabelle `apple_records`, Gewicht, Körperfett und
+Jeder Messwert landet in `apple_records`, Schlafphasen in `apple_sleep`, Trainings in `apple_workouts`. Gewicht, Körperfett, Ruhepuls, HRV (SDNN), Schritte, VO2max, Schlafdauer und
 Ernährung zusätzlich als Tageswerte (Quelle `apple`) in `daily`. Mehrfach
 importieren ist unschädlich, doppelte Werte werden übersprungen. Bei gleichen
 Kennzahlen gilt die Reihenfolge Garmin, Health Auto Export, Apple-Export.
