@@ -265,3 +265,14 @@ def test_push_plan_is_idempotent(tmp_path):
     del changed["workouts"][1]
     assert w.push(con, c, changed, today) == {"created": 0, "updated": 1, "deleted": 1, "unchanged": 0}
     assert sorted(c.deleted) == ["101", "102"]
+
+
+def test_apple_open_finds_capitalised_export_xml(tmp_path):
+    import zipfile
+    from healthsync import apple
+    p = tmp_path / "export.zip"
+    with zipfile.ZipFile(p, "w") as z:  # German iPhones write Export.xml
+        z.writestr("apple_health_export/export_cda.xml", "<x/>")
+        z.writestr("apple_health_export/Export.xml", "<HealthData/>")
+    with apple._open(str(p)) as f:
+        assert f.read() == b"<HealthData/>"

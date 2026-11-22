@@ -64,7 +64,7 @@ def _ts(s: str) -> float:
 def _open(path: str) -> IO[bytes]:
     if path.endswith(".zip"):
         z = zipfile.ZipFile(path)
-        name = next(n for n in z.namelist() if n.endswith("export.xml") and "cda" not in n)
+        name = next(n for n in z.namelist() if n.lower().endswith("export.xml") and "cda" not in n.lower())
         return z.open(name)
     return open(path, "rb")
 
