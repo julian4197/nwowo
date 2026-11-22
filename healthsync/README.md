@@ -40,6 +40,27 @@ Danach synchronisiert der Container zu den Zeiten in `SYNC_TIMES`
 (Standard 07:30, 13:00 und 21:30) und holt jeweils die letzten `SYNC_DAYS` Tage
 neu, damit nachträglich synchronisierte Uhrdaten auch ankommen.
 
+## Gewicht und Ernährung (Health Auto Export)
+
+Die Waage (Zepp Life) und Yazio schreiben in Apple Health. Die iPhone-App
+**Health Auto Export** schickt diese Werte an den Container:
+
+1. In `.env` `HAE_PORT=8085` und ein langes Zufallswort als `HAE_TOKEN` setzen,
+   dann `docker compose up -d`.
+2. In der App: *Automations* → neue Automation → *REST API*.
+   - URL: `http://<IP-der-NAS>:8085/`
+   - Header: `X-Token` = dein `HAE_TOKEN`
+   - Format JSON, Daten: *Health Metrics*, Zeitraum „Default“/letzte 7 Tage,
+     Aggregation täglich.
+   - Metriken: Gewicht, Körperfett, fettfreie Masse, BMI, Nahrungsenergie,
+     Protein, Kohlenhydrate, Fett, Ballaststoffe, Wasser.
+   - Intervall z. B. stündlich.
+3. Einmal „Manuell ausführen“ und in `docker logs healthsync` nach
+   „Health Auto Export: … days received“ schauen.
+
+Das iPhone erreicht die NAS nur im Heimnetz (oder per VPN). Den Port bitte
+nicht ins Internet freigeben.
+
 ## Wenn etwas hakt
 
 - `docker logs healthsync` zeigt jeden Lauf.

@@ -63,3 +63,8 @@ def load_daily(con: sqlite3.Connection, since: str) -> dict[str, dict[str, Any]]
             if merged.get(k) is None:
                 merged[k] = v
     return out
+
+
+def load_source_day(con: sqlite3.Connection, day: str, source: str) -> dict[str, Any]:
+    row = con.execute("SELECT metrics FROM daily WHERE day = ? AND source = ?", (day, source)).fetchone()
+    return json.loads(row[0]) if row else {}

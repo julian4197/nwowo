@@ -70,3 +70,50 @@ def test_next_run():
     now = datetime(2026, 11, 22, 14, 0)
     assert next_run(now, ["07:30", "13:00", "21:30"]) == datetime(2026, 11, 22, 21, 30)
     assert next_run(datetime(2026, 11, 22, 22, 0), ["07:30"]) == datetime(2026, 11, 23, 7, 30)
+
+
+def test_hae_parse_and_ingest(tmp_path):
+    from healthsync import hae
+
+    payload = {"data": {"metrics": [
+        {"name": "weight_body_mass", "units": "kg", "data": [
+            {"date": "2026-11-22 07:00:00 +0100", "qty": 81.9},
+            {"date": "2026-11-22 21:00:00 +0100", "qty": 82.3}]},
+        {"name": "body_fat_percentage", "units": "%", "data": [{"date": "2026-11-22 07:00:00 +0100", "qty": 0.2}]},
+        {"name": "dietary_energy", "units": "kJ", "data": [
+            {"date": "2026-11-22 08:00:00 +0100", "qty": 4184},
+            {"date": "2026-11-22 13:00:00 +0100", "qty": 4184}]},
+        {"name": "protein", "units": "g", "data": [{"date": "2026-11-21 00:00:00 +0100", "qty": 150}]},
+        {"name": "unknown_metric", "data": [{"date": "2026-11-22", "qty": 1}]},
+    ]}}
+    days = hae.parse(payload)
+    assert days["2026-11-22"] == {"weight_kg": 82.3, "body_fat_pct": 20.0, "kcal_in": 2000.0}
+    assert days["2026-11-21"] == {"protein_g": 150}
+
+    db = str(tmp_path / "h.db")
+    assert hae.ingest(db, payload) == ["2026-11-21", "2026-11-22"]
+    hae.ingest(db, {"data": {"metrics": [{"name": "protein", "units": "g",
+                                          "data": [{"date": "2026-11-22 09:00:00 +0100", "qty": 90}]}]}})
+    merged = store.load_daily(store.connect(db), "2026-11-01")
+    assert merged["2026-11-22"]["protein_g"] == 90 and merged["2026-11-22"]["kcal_in"] == 2000.0
+
+
+def test_hae_http(tmp_path):
+    import urllib.request
+    from healthsync import hae
+
+    db = str(tmp_path / "h.db")
+    srv = hae.serve(db, 0, "secret")
+    port = srv.server_address[1]
+    body = json.dumps({"data": {"metrics": [{"name": "weight_body_mass", "units": "kg",
+                                             "data": [{"date": "2026-11-22 07:00:00 +0100", "qty": 80}]}]}}).encode()
+    bad = urllib.request.Request(f"http://127.0.0.1:{port}/", data=body)
+    try:
+        urllib.request.urlopen(bad)
+        assert False
+    except urllib.error.HTTPError as e:
+        assert e.code == 401
+    ok = urllib.request.Request(f"http://127.0.0.1:{port}/", data=body, headers={"X-Token": "secret"})
+    assert urllib.request.urlopen(ok).status == 200
+    srv.shutdown()
+    assert store.load_daily(store.connect(db), "2026-11-01")["2026-11-22"]["weight_kg"] == 80

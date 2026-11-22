@@ -13,11 +13,12 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import garmin, store, summary
+from . import garmin, hae, store, summary
 
 log = logging.getLogger("healthsync")
 
@@ -46,19 +47,34 @@ def publish(files: list[Path]) -> None:
     log.info("Uploaded %s to %s", ", ".join(f.name for f in files), remote)
 
 
+_lock = threading.Lock()
+
+
 def sync(days: int) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
     con = store.connect(str(DB_PATH))
     client = garmin.make_client(TOKENSTORE)
     today = date.today()
     for i in range(days):
         day = today - timedelta(days=i)
         raw = garmin.fetch_day(client, day)
-        store.save_raw(con, day.isoformat(), "garmin", raw)
-        store.save_daily(con, day.isoformat(), "garmin", garmin.flatten(raw))
+        with _lock:
+            store.save_raw(con, day.isoformat(), "garmin", raw)
+            store.save_daily(con, day.isoformat(), "garmin", garmin.flatten(raw))
         log.info("Garmin %s synced", day)
+    con.close()
+    publish_summary()
 
+
+def publish_summary() -> None:
+    with _lock:
+        _publish_summary()
+
+
+def _publish_summary() -> None:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    con = store.connect(str(DB_PATH))
+    today = date.today()
     all_days = store.load_daily(con, (today - timedelta(days=90)).isoformat())
     summary_path = OUT_DIR / "health_summary.json"
     csv_path = OUT_DIR / "health_daily.csv"
@@ -66,6 +82,7 @@ def sync(days: int) -> None:
         json.dumps(summary.build(all_days, today), ensure_ascii=False, indent=1), encoding="utf-8"
     )
     csv_path.write_text(summary.to_csv(all_days), encoding="utf-8")
+    con.close()
     publish([summary_path, csv_path])
 
 
@@ -79,6 +96,16 @@ def next_run(now: datetime, times: list[str]) -> datetime:
 
 
 def cmd_run(days: int) -> int:
+    if hae.enabled():
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        def on_update():
+            try:
+                publish_summary()
+            except Exception:
+                log.exception("Publishing after Health Auto Export push failed")
+
+        hae.serve(str(DB_PATH), int(os.environ["HAE_PORT"]), os.getenv("HAE_TOKEN") or None, on_update)
     times = [t.strip() for t in os.getenv("SYNC_TIMES", "07:30,13:00,21:30").split(",") if t.strip()]
     while True:
         try:

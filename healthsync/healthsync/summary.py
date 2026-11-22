@@ -17,6 +17,8 @@ TREND_METRICS = [
     "training_readiness",
     "steps",
     "weight_kg",
+    "kcal_in",
+    "protein_g",
 ]
 
 CSV_COLUMNS = [
@@ -38,6 +40,11 @@ CSV_COLUMNS = [
     "intensity_min_vigorous",
     "weight_kg",
     "body_fat_pct",
+    "kcal_in",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "water_ml",
 ]
 
 
