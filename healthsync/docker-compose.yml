@@ -1,0 +1,11 @@
+services:
+  healthsync:
+    build: .
+    container_name: healthsync
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Berlin
+      RCLONE_CONFIG: /data/rclone.conf
+    volumes:
+      - ./data:/data
