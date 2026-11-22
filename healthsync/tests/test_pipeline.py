@@ -276,3 +276,34 @@ def test_apple_open_finds_capitalised_export_xml(tmp_path):
         z.writestr("apple_health_export/Export.xml", "<HealthData/>")
     with apple._open(str(p)) as f:
         assert f.read() == b"<HealthData/>"
+
+
+def test_calendar_component():
+    from zoneinfo import ZoneInfo
+    from icalendar import Calendar
+    from healthsync.calendar_busy import from_component
+
+    ics = """BEGIN:VCALENDAR
+BEGIN:VEVENT
+SUMMARY:Hundeschule
+DTSTART:20261128T083000Z
+DTEND:20261128T100000Z
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Urlaub
+DTSTART;VALUE=DATE:20261224
+DTEND;VALUE=DATE:20261227
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Frei
+TRANSP:TRANSPARENT
+DTSTART:20261128T120000Z
+END:VEVENT
+END:VCALENDAR
+"""
+    tz = ZoneInfo("Europe/Berlin")
+    items = [from_component(c, "Gemeinsam", tz) for c in Calendar.from_ical(ics).walk("VEVENT")]
+    assert items[0] == {"start": "2026-11-28T09:30+01:00", "end": "2026-11-28T11:00+01:00",
+                        "allDay": False, "title": "Hundeschule", "calendar": "Gemeinsam"}
+    assert items[1]["allDay"] and items[1]["start"] == "2026-12-24" and items[1]["end"] == "2026-12-27"
+    assert items[2] is None

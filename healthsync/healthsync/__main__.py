@@ -6,6 +6,7 @@ Commands:
   backfill     fetch every day since SINCE (oldest first, skips days already stored)
   import-apple import an Apple Health export (export.zip) from /data/inbox
   push-plan    push plan.json (from Google Drive or --file) to Garmin Connect
+  calendar     export upcoming iCloud calendar events to calendar_busy.json
   run          stay running and sync at the times in SYNC_TIMES
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import apple, garmin, hae, store, summary, workouts
+from . import apple, calendar_busy, garmin, hae, store, summary, workouts
 
 log = logging.getLogger("healthsync")
 
@@ -142,6 +143,15 @@ def _publish_summary() -> None:
     publish([summary_path, csv_path])
 
 
+def publish_calendar() -> None:
+    if not calendar_busy.enabled():
+        return
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "calendar_busy.json"
+    path.write_text(json.dumps(calendar_busy.fetch(), ensure_ascii=False, indent=1), encoding="utf-8")
+    publish([path])
+
+
 def next_run(now: datetime, times: list[str]) -> datetime:
     candidates = []
     for t in times:
@@ -231,6 +241,10 @@ def cmd_run(days: int) -> int:
             sync(days)
         except Exception:
             log.exception("Sync failed, retrying at the next scheduled time")
+        try:
+            publish_calendar()
+        except Exception:
+            log.exception("Calendar export failed")
         wake = next_run(datetime.now(), times)
         log.info("Next sync at %s", wake.strftime("%Y-%m-%d %H:%M"))
         time.sleep(max(60, (wake - datetime.now()).total_seconds()))
@@ -239,7 +253,7 @@ def cmd_run(days: int) -> int:
 def main() -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(prog="healthsync")
-    p.add_argument("command", choices=["login", "sync", "backfill", "import-apple", "push-plan", "run"])
+    p.add_argument("command", choices=["login", "sync", "backfill", "import-apple", "push-plan", "calendar", "run"])
     p.add_argument("--days", type=int, default=int(os.getenv("SYNC_DAYS", "3")),
                    help="how many recent days to (re)fetch per sync")
     p.add_argument("--since", type=date.fromisoformat, help="backfill start, e.g. 2019-01-01")
@@ -250,6 +264,12 @@ def main() -> int:
         return cmd_login()
     if a.command == "sync":
         sync(a.days)
+        return 0
+    if a.command == "calendar":
+        if not calendar_busy.enabled():
+            print("ICLOUD_USER und ICLOUD_APP_PASSWORD fehlen in .env.", file=sys.stderr)
+            return 1
+        publish_calendar()
         return 0
     if a.command == "push-plan":
         return cmd_push_plan(a.file)

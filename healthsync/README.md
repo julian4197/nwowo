@@ -101,6 +101,14 @@ Kalender.
 - Von Hand: `docker compose run --rm healthsync push-plan` (oder
   `--file plan.json`). Das Format steht oben in `healthsync/workouts.py`.
 
+## Termine aus dem iCloud-Kalender
+
+Mit `ICLOUD_USER`, `ICLOUD_APP_PASSWORD` (app-spezifisches Passwort, nicht das
+Apple-ID-Passwort) und `ICLOUD_CALENDARS` in `.env` legt der Container bei
+jedem Sync `calendar_busy.json` in Drive ab: alle Termine der nächsten 14 Tage
+mit Start, Ende, ganztägig, Titel und Kalender. Als „frei“ markierte und
+abgesagte Termine fehlen. Von Hand: `docker compose run --rm healthsync calendar`.
+
 ## Wenn etwas hakt
 
 - `docker logs healthsync` zeigt jeden Lauf.
