@@ -4,6 +4,7 @@ Commands:
   login        one-time interactive login (asks for the MFA code), saves tokens
   sync         fetch the last DAYS days once and publish the summary
   backfill     fetch every day since SINCE (oldest first, skips days already stored)
+  import-apple import an Apple Health export (export.zip) from /data/inbox
   run          stay running and sync at the times in SYNC_TIMES
 """
 from __future__ import annotations
@@ -19,7 +20,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import garmin, hae, store, summary
+from . import apple, garmin, hae, store, summary
 
 log = logging.getLogger("healthsync")
 
@@ -28,6 +29,7 @@ TOKENSTORE = os.getenv("GARMINTOKENS", str(DATA_DIR / "garmin_tokens"))
 DB_PATH = DATA_DIR / "health.db"
 OUT_DIR = DATA_DIR / "out"
 FIT_DIR = DATA_DIR / "activities"
+INBOX = DATA_DIR / "inbox"
 
 
 def cmd_login() -> int:
@@ -82,6 +84,17 @@ def sync(days: int) -> None:
     _sync_activities(client, con, today - timedelta(days=days - 1), today)
     con.close()
     publish_summary()
+
+
+def cmd_import_apple(path: str | None) -> int:
+    files = [Path(path)] if path else apple.find_export(INBOX)
+    if not files:
+        print(f"Keine export.zip in {INBOX} gefunden.", file=sys.stderr)
+        return 1
+    for f in files:
+        apple.import_export(str(DB_PATH), str(f))
+    publish_summary()
+    return 0
 
 
 def backfill(since: date, pause: float) -> None:
@@ -158,17 +171,20 @@ def cmd_run(days: int) -> int:
 def main() -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(prog="healthsync")
-    p.add_argument("command", choices=["login", "sync", "backfill", "run"])
+    p.add_argument("command", choices=["login", "sync", "backfill", "import-apple", "run"])
     p.add_argument("--days", type=int, default=int(os.getenv("SYNC_DAYS", "3")),
                    help="how many recent days to (re)fetch per sync")
     p.add_argument("--since", type=date.fromisoformat, help="backfill start, e.g. 2019-01-01")
     p.add_argument("--pause", type=float, default=2.0, help="backfill seconds between days")
+    p.add_argument("--file", default=None, help="import-apple: path to export.zip")
     a = p.parse_args()
     if a.command == "login":
         return cmd_login()
     if a.command == "sync":
         sync(a.days)
         return 0
+    if a.command == "import-apple":
+        return cmd_import_apple(a.file)
     if a.command == "backfill":
         if not a.since:
             p.error("backfill needs --since YYYY-MM-DD")

@@ -152,3 +152,30 @@ def test_backfill_skips_stored_days_and_saves_activities(tmp_path, monkeypatch):
     assert (tmp_path / "fit" / "7.zip").read_bytes() == b"zip"
     con = store.connect(str(tmp_path / "h.db"))
     assert con.execute("SELECT type FROM activities WHERE id = 7").fetchone() == ("running",)
+
+
+APPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="de_DE">
+ <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Zepp Life" unit="kg" startDate="2025-06-01 07:00:00 +0200" endDate="2025-06-01 07:00:00 +0200" value="80.5"/>
+ <Record type="HKQuantityTypeIdentifierBodyFatPercentage" sourceName="Zepp Life" unit="%" startDate="2025-06-01 07:00:00 +0200" endDate="2025-06-01 07:00:00 +0200" value="0.21"/>
+ <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="YAZIO" unit="kcal" startDate="2025-06-01 08:00:00 +0200" endDate="2025-06-01 08:00:00 +0200" value="600"/>
+ <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="YAZIO" unit="kcal" startDate="2025-06-01 19:00:00 +0200" endDate="2025-06-01 19:00:00 +0200" value="900"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" startDate="2025-06-01 10:00:00 +0200" endDate="2025-06-01 11:00:00 +0200" value="1200"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Connect" startDate="2025-06-01 00:00:00 +0200" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+</HealthData>"""
+
+
+def test_apple_import(tmp_path):
+    import zipfile
+    from healthsync import apple
+
+    zpath = tmp_path / "export.zip"
+    with zipfile.ZipFile(zpath, "w") as z:
+        z.writestr("apple_health_export/export.xml", APPLE_XML)
+    db = str(tmp_path / "h.db")
+    assert apple.import_export(db, str(zpath)) == 5
+    assert apple.import_export(db, str(zpath)) == 5  # re-import does not duplicate
+    con = store.connect(db)
+    assert con.execute("SELECT COUNT(*) FROM apple_records").fetchone()[0] == 5
+    day = store.load_daily(con, "2025-01-01")["2025-06-01"]
+    assert day == {"weight_kg": 80.5, "body_fat_pct": 21.0, "kcal_in": 1500.0}

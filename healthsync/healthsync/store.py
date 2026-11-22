@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS daily (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (day, source)
 );
+CREATE TABLE IF NOT EXISTS apple_records (
+    type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    unit TEXT,
+    start TEXT NOT NULL,
+    end TEXT,
+    value REAL,
+    PRIMARY KEY (type, source, start, value)
+);
 CREATE TABLE IF NOT EXISTS activities (
     id INTEGER PRIMARY KEY,
     day TEXT NOT NULL,
@@ -62,7 +71,9 @@ def load_daily(con: sqlite3.Connection, since: str) -> dict[str, dict[str, Any]]
     """Merge all sources per day. Later sources fill gaps, they never overwrite."""
     out: dict[str, dict[str, Any]] = {}
     rows = con.execute(
-        "SELECT day, source, metrics FROM daily WHERE day >= ? ORDER BY day, source", (since,)
+        "SELECT day, source, metrics FROM daily WHERE day >= ? ORDER BY day, "
+        "CASE source WHEN 'garmin' THEN 0 WHEN 'hae' THEN 1 ELSE 2 END",
+        (since,),
     )
     for day, _source, metrics in rows:
         merged = out.setdefault(day, {})

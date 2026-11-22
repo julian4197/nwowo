@@ -44,6 +44,21 @@ Danach synchronisiert der Container zu den Zeiten in `SYNC_TIMES`
 (Standard 07:30, 13:00 und 21:30) und holt jeweils die letzten `SYNC_DAYS` Tage
 neu, damit nachträglich synchronisierte Uhrdaten auch ankommen.
 
+## Apple-Health-Verlauf importieren
+
+Für die komplette Vergangenheit von Waage (Zepp Life), Yazio und allem anderen
+in Apple Health:
+
+1. iPhone → Health-App → Profilbild → „Alle Gesundheitsdaten exportieren“.
+2. Die `export.zip` nach `data/inbox/` auf der NAS kopieren (z. B. per AirDrop
+   an den Mac, dann `scp export.zip nashorn:/volume1/docker/healthsync/data/inbox/`).
+3. `docker compose run --rm healthsync import-apple`
+
+Jeder Messwert landet in der Tabelle `apple_records`, Gewicht, Körperfett und
+Ernährung zusätzlich als Tageswerte (Quelle `apple`) in `daily`. Mehrfach
+importieren ist unschädlich, doppelte Werte werden übersprungen. Bei gleichen
+Kennzahlen gilt die Reihenfolge Garmin, Health Auto Export, Apple-Export.
+
 ## Gewicht und Ernährung (Health Auto Export)
 
 Die Waage (Zepp Life) und Yazio schreiben in Apple Health. Die iPhone-App
