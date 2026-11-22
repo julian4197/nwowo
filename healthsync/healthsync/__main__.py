@@ -22,7 +22,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import apple, calendar_busy, garmin, hae, store, summary, workouts
+from . import apple, calendar_busy, garmin, hae, healthfit, store, summary, workouts
 
 log = logging.getLogger("healthsync")
 
@@ -89,6 +89,11 @@ def sync(days: int) -> None:
         _sync_day(client, con, today - timedelta(days=i))
     _sync_activities(client, con, today - timedelta(days=days - 1), today)
     con.close()
+    try:
+        with _lock:
+            healthfit.sync(str(DB_PATH), DATA_DIR)
+    except Exception:
+        log.exception("HealthFit sheet import failed")
     publish_summary()
 
 
@@ -234,7 +239,8 @@ def cmd_run(days: int) -> int:
             except Exception:
                 log.exception("Publishing after Health Auto Export push failed")
 
-        hae.serve(str(DB_PATH), int(os.environ["HAE_PORT"]), os.getenv("HAE_TOKEN") or None, on_update)
+        hae.serve(str(DB_PATH), int(os.environ["HAE_PORT"]), os.getenv("HAE_TOKEN") or None, on_update,
+                  plan_path=str(PLAN_PATH))
     times = [t.strip() for t in os.getenv("SYNC_TIMES", "07:30,13:00,21:30").split(",") if t.strip()]
     while True:
         try:

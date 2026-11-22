@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Coach">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<title>Coach</title>
+<style>
+:root {
+  --bg: #f4f3ef; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e3e1db;
+  --run: #e0662b; --bike: #2f7dd1; --strength: #7a4fc9; --racket: #2a9d8f; --other: #9a9890;
+  --green: #2e9d57; --yellow: #d9a514; --red: #d2453b; --grey: #9a9890;
+  --accent: #e0662b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121211; --card: #1d1d1b; --ink: #f1efe9; --muted: #a09e97; --line: #2f2e2b;
+    --run: #f07a3f; --bike: #5a9be6; --strength: #a07ee6; --racket: #45b8aa; --other: #7d7b74;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121211; --card: #1d1d1b; --ink: #f1efe9; --muted: #a09e97; --line: #2f2e2b;
+  --run: #f07a3f; --bike: #5a9be6; --strength: #a07ee6; --racket: #45b8aa; --other: #7d7b74;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+main { max-width: 640px; margin: 0 auto; display: grid; gap: 12px; }
+.card { background: var(--card); border-radius: 16px; padding: 16px; border: 1px solid var(--line); }
+h1 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0 0 4px; display: flex; justify-content: space-between; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.big { font-size: 40px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.mid { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); font-size: 14px; }
+.row { display: flex; gap: 12px; align-items: center; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 13px; background: var(--line); }
+.hero { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; }
+.ampel { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; }
+.session { padding: 8px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; }
+.session:first-of-type { border-top: 0; }
+.bar { height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+details { background: var(--card); border-radius: 16px; border: 1px solid var(--line); }
+summary { padding: 14px 16px; font-weight: 600; cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "›"; color: var(--muted); transition: transform .2s; }
+details[open] summary::after { transform: rotate(90deg); }
+details > div { padding: 0 16px 16px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--muted); font-size: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+td, th { padding: 6px 4px; border-top: 1px solid var(--line); text-align: right; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
+td:first-child, th:first-child { text-align: left; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; background: var(--c); vertical-align: -1px; }
+.flag { color: var(--red); font-size: 14px; }
+.foot { text-align: center; font-size: 12px; color: var(--muted); }
+.err { color: var(--red); }
+</style>
+</head>
+<body>
+<main id="app"><div class="card muted">Lade Daten …</div></main>
+<script>
+const SPORT = { running: ["Lauf", "var(--run)", "🏃"], cycling: ["Rad", "var(--bike)", "🚴"],
+  strength: ["Kraft", "var(--strength)", "💪"], racket: ["Badminton", "var(--racket)", "🏸"],
+  walking: ["Gehen", "var(--other)", "🚶"], other: ["Sonstiges", "var(--other)", "•"] };
+const AMPEL = { "grün": ["var(--green)", "Bereit", "Training wie geplant."],
+  "gelb": ["var(--yellow)", "Vorsicht", "Einheit machen, aber eher locker halten."],
+  "rot": ["var(--red)", "Erholen", "Heute locker oder Pause, Qualität verschieben."],
+  "grau": ["var(--grey)", "Keine Daten", "Uhr synchronisieren."] };
+const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const d = s => new Date(s + "T12:00:00");
+const dShort = s => `${WD[d(s).getDay()]} ${d(s).getDate()}.${d(s).getMonth() + 1}.`;
+const num = (v, k = 0) => v == null ? "–" : Number(v).toLocaleString("de-DE", { maximumFractionDigits: k, minimumFractionDigits: k });
+const hm = m => m == null ? "–" : `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, "0")} h`;
+const signed = (v, k = 1) => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "±") + num(Math.abs(v), k);
+
+function ring(done, total, color) {
+  const r = 26, c = 2 * Math.PI * r, f = total ? Math.min(1, done / total) : 0;
+  const arc = f > 0 ? `<circle cx="32" cy="32" r="${r}" fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${c * f} ${c}" transform="rotate(-90 32 32)"/>` : "";
+  return `<svg viewBox="0 0 64 64" style="width:64px;height:64px">
+    <circle cx="32" cy="32" r="${r}" fill="none" stroke="var(--line)" stroke-width="7"/>
+    ${arc}
+    <text x="32" y="37" text-anchor="middle" style="font-size:15px;font-weight:700;fill:var(--ink)">${done}/${total}</text></svg>`;
+}
+
+function line(series, opts = {}) {
+  const W = 320, H = opts.h || 90, P = 4;
+  const pts = series.map((p, i) => [i, p[1]]).filter(p => p[1] != null);
+  if (pts.length < 2) return `<div class="muted">Noch zu wenig Daten.</div>`;
+  const extra = (opts.band || []).filter(v => v != null);
+  const vals = pts.map(p => p[1]).concat(extra, (opts.avg || []).map(p => p[1]).filter(v => v != null));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
+  const x = i => P + i * (W - 2 * P) / (series.length - 1), y = v => H - P - (v - lo) * (H - 2 * P) / (hi - lo);
+  const path = arr => arr.map((p, j) => `${j ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+  let band = "";
+  if (opts.band && opts.band[0] != null && opts.band[1] != null)
+    band = `<rect x="${P}" width="${W - 2 * P}" y="${y(opts.band[1])}" height="${y(opts.band[0]) - y(opts.band[1])}" fill="var(--green)" opacity=".12"/>`;
+  const avg = opts.avg ? `<path d="${path(opts.avg.map((p, i) => [i, p[1]]).filter(p => p[1] != null))}" fill="none" stroke="var(--ink)" stroke-width="2"/>` : "";
+  const dots = opts.avg ? pts.map(p => `<circle cx="${x(p[0])}" cy="${y(p[1])}" r="2" fill="${opts.color || "var(--accent)"}" opacity=".7"/>`).join("")
+    : `<path d="${path(pts)}" fill="none" stroke="${opts.color || "var(--accent)"}" stroke-width="2.2" stroke-linejoin="round"/>`;
+  const last = pts[pts.length - 1];
+  return `<svg viewBox="0 0 ${W} ${H + 14}">${band}${dots}${avg}
+    <circle cx="${x(last[0])}" cy="${y(last[1])}" r="3.5" fill="${opts.color || "var(--accent)"}"/>
+    <text x="${P}" y="${H + 12}">${dShort(series[0][0])}</text>
+    <text x="${W - P}" y="${H + 12}" text-anchor="end">${dShort(series[series.length - 1][0])}</text></svg>`;
+}
+
+function bars(weeks, key, color, unit) {
+  const W = 320, H = 100, n = weeks.length, bw = (W - 8) / n;
+  const max = Math.max(1, ...weeks.map(w => w[key]));
+  return `<svg viewBox="0 0 ${W} ${H + 28}">` + weeks.map((w, i) => {
+    const h = (H - 14) * w[key] / max, xx = 4 + i * bw;
+    return `<rect x="${xx + 3}" y="${H - h}" width="${bw - 6}" height="${h}" rx="3" fill="${color}" opacity="${w.current ? 1 : .75}"/>
+      ${w[key] ? `<text x="${xx + bw / 2}" y="${H - h - 3}" text-anchor="middle">${num(w[key], key === "run_km" ? 0 : 0)}</text>` : ""}
+      ${i % 2 === (n - 1) % 2 ? `<text x="${xx + bw / 2}" y="${H + 12}" text-anchor="middle">${d(w.start).getDate()}.${d(w.start).getMonth() + 1}.</text>` : ""}`;
+  }).join("") + `<text x="4" y="${H + 26}">Wochenbeginn · ${unit}</text></svg>`;
+}
+
+function heatmap(entries, today) {
+  const end = d(today), start = new Date(end); start.setDate(start.getDate() - ((end.getDay() + 6) % 7) - 7 * 11);
+  const byDay = {};
+  entries.forEach(([day, sport, km, min]) => (byDay[day] = byDay[day] || []).push({ sport, km, min }));
+  const cell = 22, gap = 4, W = 12 * (cell + gap) + 24;
+  let out = `<svg viewBox="0 0 ${W} ${7 * (cell + gap) + 4}">`;
+  ["M", "D", "M", "D", "F", "S", "S"].forEach((t, r) => out += `<text x="0" y="${r * (cell + gap) + 15}">${t}</text>`);
+  for (let c = 0; c < 12; c++) for (let r = 0; r < 7; r++) {
+    const day = new Date(start); day.setDate(start.getDate() + c * 7 + r);
+    const iso = day.toISOString().slice(0, 10);
+    const xx = 18 + c * (cell + gap), yy = r * (cell + gap);
+    if (day > end) continue;
+    const acts = (byDay[iso] || []).filter(a => a.sport !== "walking");
+    const main = acts.sort((a, b) => b.min - a.min)[0];
+    const fill = main ? SPORT[main.sport][1] : "var(--line)";
+    const op = main ? Math.min(1, .45 + acts.reduce((s, a) => s + a.min, 0) / 90) : 1;
+    out += `<rect x="${xx}" y="${yy}" width="${cell}" height="${cell}" rx="5" fill="${fill}" opacity="${op}"${iso === today ? ' stroke="var(--ink)" stroke-width="2"' : ""}><title>${iso}: ${acts.map(a => SPORT[a.sport][0] + " " + Math.round(a.min) + " min").join(", ") || "frei"}</title></rect>`;
+    if (acts.length > 1) out += `<circle cx="${xx + cell - 5}" cy="${yy + 5}" r="3" fill="var(--card)"/>`;
+  }
+  return out + "</svg>";
+}
+
+function render(D) {
+  const A = AMPEL[D.ampel] || AMPEL.grau;
+  const race = D.races[0];
+  const wk = D.week;
+  let h = "";
+
+  // 1. Heute
+  h += `<section class="card"><h1><span>${dShort(D.today)}</span><span>Daten bis ${D.latest_day ? dShort(D.latest_day) : "–"}</span></h1>
+    <div class="hero"><div class="ampel" style="background:${A[0]}">${A[1]}</div>
+    <div>${D.today_plan.length ? D.today_plan.map(p => `<div class="mid">${SPORT[p.sport]?.[2] || ""} ${esc(p.name)}${p.status === "done" ? " ✓" : ""}</div>`).join("")
+      : `<div class="mid">Heute frei</div>`}
+      <div class="muted">${A[2]}${D.readiness != null ? ` Readiness ${D.readiness}.` : ""}</div></div></div>
+    ${D.flags.map(f => `<div class="flag">• ${esc(f)}</div>`).join("")}</section>`;
+
+  // 2. Ziel
+  if (race) {
+    const p = race.prediction, gap = race.gap_sec;
+    const verdict = gap == null ? "Prognose folgt nach dem ersten harten Lauf (5-km-Test 12.12.)"
+      : gap <= 0 ? `Auf Kurs: ${Math.round(-gap)} s Puffer` : `Noch ${Math.floor(gap / 60)}:${String(Math.round(gap % 60)).padStart(2, "0")} min zum Ziel`;
+    h += `<section class="card"><h2>${esc(race.name)}</h2>
+      <div class="row" style="justify-content:space-between;align-items:flex-end">
+        <div><div class="big">${race.days_left}</div><div class="muted">Tage${race.date_tentative ? " (Datum vorläufig)" : ""}</div></div>
+        <div style="text-align:right"><div class="mid">Ziel ${race.target}</div><div class="muted">${race.target_pace}/km · ${num(race.distance_km, 2)} km</div></div></div>
+      <div style="margin-top:12px" class="row"><span class="dot" style="background:${gap == null ? "var(--grey)" : gap <= 0 ? "var(--green)" : gap < 90 ? "var(--yellow)" : "var(--red)"}"></span>
+        <div><b>${verdict}</b><div class="muted">${p ? `Prognose ${p.time} (${p.pace}/km), aus ${num(p.from_km, 1)} km in ${p.from_time} am ${dShort(p.from_day)}` : `Lockere Läufe zählen nicht, sie würden die Prognose verfälschen.`}${race.previous ? ` Vorjahr ${esc(race.previous)}.` : ""}</div></div></div>
+      ${D.races.slice(1).map(r => `<div class="session"><span>🏁</span><div style="flex:1">${esc(r.name)} <span class="muted">in ${r.days_left} Tagen · Ziel ${r.target}${r.prediction ? ` · Prognose ${r.prediction.time}` : ""}</span></div></div>`).join("")}
+    </section>`;
+  }
+
+  // 3. Woche + Streak
+  h += `<section class="grid2">
+    <div class="card"><h2>Diese Woche</h2><div class="row">${ring(wk.done, wk.planned || 0, "var(--accent)")}
+      <div class="muted">${wk.planned ? "Einheiten<br>vom Plan" : "kein Plan"}<br>${num(wk.run_km, 1)} km</div></div></div>
+    <div class="card"><h2>Serie</h2><div class="big">${D.streak_weeks}</div><div class="muted">Wochen in Folge geschafft${D.adherence_pct != null ? ` · Plantreue ${D.adherence_pct} %` : ""}</div></div>
+  </section>`;
+
+  // 4. Nächste Einheiten
+  h += `<section class="card"><h2>Als Nächstes</h2>${D.next.length ? D.next.map(p => `<div class="session"><span>${SPORT[p.sport]?.[2] || ""}</span>
+    <div style="flex:1"><b>${esc(p.name)}</b> <span class="muted">${dShort(p.date)}${p.status === "late" ? " · nachholbar" : ""}</span>
+    ${p.description ? `<div class="muted">${esc(p.description)}</div>` : ""}</div></div>`).join("") : `<div class="muted">Kein Plan hinterlegt.</div>`}
+    <div class="session"><span>💪</span><div style="flex:1">Kraft diese Woche <b>${wk.strength}/${wk.strength_target}</b></div></div></section>`;
+
+  // Deepdive
+  const weeksRows = D.weeks.slice().reverse().map(w => `<tr><td>${dShort(w.start)}</td><td>${w.planned ? `${w.planned_done}/${w.planned}` : "–"}</td><td>${w.sessions}</td><td>${num(w.run_km, 1)}</td><td>${w.strength}</td><td>${hm(w.minutes)}</td></tr>`).join("");
+  h += `<details><summary>Routine & Plantreue</summary><div>
+    <h2>Aktivitäten, 12 Wochen</h2>${heatmap(D.heatmap, D.today)}
+    <div class="legend">${["running", "cycling", "strength", "racket"].map(s => `<span style="--c:${SPORT[s][1]}">${SPORT[s][0]}</span>`).join("")}</div>
+    <h2 style="margin-top:16px">Wochen</h2><table><tr><th>Woche</th><th>Plan</th><th>Einh.</th><th>km</th><th>Kraft</th><th>Zeit</th></tr>${weeksRows}</table>
+    <p class="muted">Eine Woche zählt als geschafft ab 80 % der geplanten Einheiten (ohne Plan: mindestens 3 Einheiten). Verschobene Einheiten in derselben Woche zählen mit, Badminton ersetzt Rad.</p>
+  </div></details>`;
+
+  const planRows = D.plan.filter(p => p.status !== "upcoming").slice(-14).reverse().map(p => `<div class="session"><span>${{ done: "✅", missed: "❌", late: "⏳", today: "📍" }[p.status] || "·"}</span><div style="flex:1">${esc(p.name)} <span class="muted">${dShort(p.date)}</span></div></div>`).join("");
+  h += `<details><summary>Laufen</summary><div>
+    <h2>Lauf-km pro Woche</h2>${bars(D.weeks, "run_km", "var(--run)", "km")}
+    <p class="muted">${D.year.run_km} km gelaufen und ${D.year.sessions} Einheiten seit 1.1. (Garmin-Uhr). Faustregel: Umfang pro Woche um höchstens rund 10 % steigern; größere Sprünge gehen mit mehr Verletzungen einher (Nielsen et al. 2014, JOSPT 44:739).</p>
+    <h2>Letzte Aktivitäten</h2><table><tr><th>Tag</th><th>Art</th><th>km</th><th>Zeit</th><th>Pace</th><th>Puls</th></tr>
+    ${D.recent.map(a => `<tr><td>${dShort(a.day)}</td><td>${SPORT[a.sport][2]}</td><td>${a.km ? num(a.km, 1) : "–"}</td><td>${Math.round(a.min)}′</td><td>${a.sport === "running" && a.km ? (p => `${Math.floor(p)}:${String(Math.round(p % 1 * 60)).padStart(2, "0")}`)(a.min / a.km) : "–"}</td><td>${a.hr ? Math.round(a.hr) : "–"}</td></tr>`).join("")}</table>
+    <p class="muted">Prognosen nach Riegel (1981): Zeit × (Distanz-Verhältnis)<sup>1,06</sup>, aus dem besten harten Lauf (Ø Puls ab 170) oder 5-km-Abschnitt der letzten 8 Wochen. Der 5-km-Test am 12.12. liefert die erste belastbare Prognose.</p>
+    ${planRows ? `<h2>Plan bisher</h2>${planRows}` : ""}
+  </div></details>`;
+
+  const R = D.recovery;
+  const rec = (k, f = v => num(v)) => {
+    const r = R[k], diff = r.avg_7d != null && r.avg_28d != null ? r.avg_7d - r.avg_28d : null;
+    const good = diff == null ? null : (r.good === "up" ? diff >= 0 : diff <= 0);
+    return `<div style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><b>${r.label}</b>
+      <span class="muted">heute ${f(r.latest)} · 7 T ${f(r.avg_7d)} · 28 T ${f(r.avg_28d)}
+      ${diff != null ? `<span class="pill" style="color:${good ? "var(--green)" : "var(--red)"}">${good ? "▲" : "▼"}</span>` : ""}</span></div>
+      ${line(r.series, { band: k === "hrv_last_night" ? r.baseline : null, color: "var(--bike)", h: 70 })}</div>`;
+  };
+  h += `<details><summary>Erholung</summary><div>
+    ${rec("hrv_last_night")}${rec("resting_hr")}${rec("sleep_min", hm)}${rec("body_battery_high")}
+    <p class="muted">Grünes Band = dein HRV-Normalbereich laut Garmin. Harte Einheiten an Tagen mit guter HRV und lockere an schlechten Tagen brachten in Studien mehr Fortschritt als ein starrer Plan (Kiviniemi et al. 2007, Eur J Appl Physiol 101:743). Ruhepuls ≥ 5 Schläge über dem 28-Tage-Schnitt oder weniger als 6 h Schlaf ergeben Gelb.</p>
+  </div></details>`;
+
+  const B = D.body;
+  h += `<details><summary>Körper & Ernährung</summary><div>
+    <div class="grid2"><div><div class="mid">${num(B.weight_now, 1)} kg</div><div class="muted">7-Tage-Schnitt · ${signed(B.weight_change_4w)} kg in 4 Wochen</div></div>
+    <div><div class="mid">${num(B.protein_7d)}${B.protein_target ? ` / ${B.protein_target}` : ""} g</div><div class="muted">Protein pro Tag (7 T), Ziel ${num(B.protein_g_per_kg, 1)} g/kg</div></div></div>
+    ${line(B.weight, { avg: B.weight_avg, color: "var(--strength)", h: 90 })}
+    <p class="muted">${B.last_weigh ? `Zuletzt gewogen ${dShort(B.last_weigh)}.` : "Noch keine Gewichtsdaten."} ${B.kcal_7d ? `Ø ${num(B.kcal_7d)} kcal pro Tag.` : "Keine Yazio-Daten in den letzten 7 Tagen."}
+    Der Tagesschnitt schwankt um 1–2 kg durch Wasser; zählen tut die Linie (7-Tage-Schnitt). Für Muskelaufbau reichen rund 1,6 g Protein pro kg; mehr bringt im Schnitt kaum zusätzlich (Morton et al. 2018, BJSM 52:376).</p>
+  </div></details>`;
+
+  h += `<div class="foot">Stand ${D.generated_at.replace("T", " ")} · <a href="#" onclick="load();return false" style="color:inherit">neu laden</a></div>`;
+  document.getElementById("app").innerHTML = h;
+}
+
+async function load() {
+  try {
+    const r = await fetch("api/dashboard.json", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const D = await r.json();
+    try { localStorage.setItem("dash", JSON.stringify(D)); } catch (e) {}
+    render(D);
+  } catch (e) {
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem("dash")); } catch (_) {}
+    if (cached) { render(cached); document.querySelector(".foot").insertAdjacentHTML("afterbegin", `<div class="err">NAS nicht erreichbar, zeige letzten Stand.</div>`); }
+    else document.getElementById("app").innerHTML = `<div class="card err">NAS nicht erreichbar (${esc(e.message)}). Bist du im WLAN zu Hause?</div>`;
+  }
+}
+load();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>

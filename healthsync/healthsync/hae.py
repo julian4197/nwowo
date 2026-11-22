@@ -12,6 +12,8 @@ import json
 import logging
 import os
 import threading
+from datetime import date
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -82,8 +84,45 @@ def ingest(db_path: str, payload: dict[str, Any]) -> list[str]:
     return sorted(days)
 
 
-def serve(db_path: str, port: int, token: str | None, on_update=None) -> ThreadingHTTPServer:
+def serve(db_path: str, port: int, token: str | None, on_update=None,
+          plan_path: str | None = None) -> ThreadingHTTPServer:
+    """POST: Health Auto Export pushes. GET: the dashboard (see dashboard.py)."""
+    from . import dashboard
+
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            path = self.path.split("?")[0]
+            try:
+                if path in ("/", "/index.html"):
+                    body, ctype = dashboard.page(), "text/html; charset=utf-8"
+                elif path == "/api/dashboard.json":
+                    con = store.connect(db_path)
+                    try:
+                        plan = dashboard.load_plan(Path(plan_path)) if plan_path else None
+                        data = dashboard.build(con, plan, date.today())
+                    finally:
+                        con.close()
+                    body, ctype = json.dumps(data, ensure_ascii=False).encode(), "application/json; charset=utf-8"
+                elif path == "/manifest.json":
+                    body, ctype = dashboard.manifest(), "application/manifest+json"
+                elif path in ("/icon.png", "/apple-touch-icon.png"):
+                    body, ctype = dashboard.icon_png(), "image/png"
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+            except Exception:
+                log.exception("Dashboard request %s failed", path)
+                self.send_response(500)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self):  # noqa: N802
             if token and self.headers.get("X-Token") != token:
                 self.send_response(401)
@@ -109,7 +148,7 @@ def serve(db_path: str, port: int, token: str | None, on_update=None) -> Threadi
 
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    log.info("Listening for Health Auto Export on port %d", port)
+    log.info("Listening for Health Auto Export and the dashboard on port %d", port)
     return server
 
 

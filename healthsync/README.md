@@ -59,7 +59,33 @@ Ernährung zusätzlich als Tageswerte (Quelle `apple`) in `daily`. Mehrfach
 importieren ist unschädlich, doppelte Werte werden übersprungen. Bei gleichen
 Kennzahlen gilt die Reihenfolge Garmin, Health Auto Export, Apple-Export.
 
-## Gewicht und Ernährung (Health Auto Export)
+## Dashboard
+
+Unter `http://<IP-der-NAS>:8085/` zeigt der Container ein Dashboard für
+Motivation, Fortschritt und Routine. Auf dem iPhone in Safari öffnen,
+Teilen → „Zum Home-Bildschirm“, dann startet es wie eine App.
+
+- **Oben (auf einen Blick):** Ampel für heute aus HRV, Ruhepuls, Schlaf und
+  Body Battery, die geplante Einheit, Countdown zum nächsten Wettkampf mit
+  Zielzeit und Prognose, erledigte Einheiten dieser Woche und die Serie
+  geschaffter Wochen.
+- **Aufklappbar:** Aktivitätskalender über 12 Wochen, Plantreue je Woche,
+  Lauf-km, letzte Aktivitäten, Erholungstrends über 28 Tage, Gewicht im
+  7-Tage-Schnitt und Protein pro kg.
+
+Ziele stehen im Plan unter `goals` (siehe `healthsync/dashboard.py`). Die Seite
+liest nur die lokale Datenbank und den letzten `plan.json`; ohne WLAN zeigt sie
+den zuletzt geladenen Stand. Port 8085 nicht ins Internet freigeben; für
+unterwegs ein VPN wie Tailscale nutzen.
+
+## Gewicht und Ernährung aus dem HealthFit-Sheet
+
+HealthFit schreibt Waage (Zepp Life) und Yazio in ein Google Sheet. Mit
+`HEALTHFIT_SHEET_ID=<ID aus der Sheet-URL>` in `.env` lädt der Container das
+Sheet bei jedem Sync (rclone, `scope = drive`) und übernimmt die Tabs
+„Gewicht“ und „Ernährung“ als Quelle `healthfit`. Kostet nichts extra.
+
+## Gewicht und Ernährung (Health Auto Export, optional)
 
 Die Waage (Zepp Life) und Yazio schreiben in Apple Health. Die iPhone-App
 **Health Auto Export** schickt diese Werte an den Container:
