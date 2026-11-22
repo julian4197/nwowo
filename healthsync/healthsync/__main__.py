@@ -3,6 +3,7 @@
 Commands:
   login        one-time interactive login (asks for the MFA code), saves tokens
   sync         fetch the last DAYS days once and publish the summary
+  backfill     fetch every day since SINCE (oldest first, skips days already stored)
   run          stay running and sync at the times in SYNC_TIMES
 """
 from __future__ import annotations
@@ -26,6 +27,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 TOKENSTORE = os.getenv("GARMINTOKENS", str(DATA_DIR / "garmin_tokens"))
 DB_PATH = DATA_DIR / "health.db"
 OUT_DIR = DATA_DIR / "out"
+FIT_DIR = DATA_DIR / "activities"
 
 
 def cmd_login() -> int:
@@ -50,18 +52,54 @@ def publish(files: list[Path]) -> None:
 _lock = threading.Lock()
 
 
+def _sync_day(client, con, day: date) -> None:
+    raw = garmin.fetch_day(client, day)
+    with _lock:
+        store.save_raw(con, day.isoformat(), "garmin", raw)
+        store.save_daily(con, day.isoformat(), "garmin", garmin.flatten(raw))
+    log.info("Garmin %s synced", day)
+
+
+def _sync_activities(client, con, start: date, end: date) -> None:
+    acts = garmin.fetch_activities(client, start, end)
+    with _lock:
+        store.save_activities(con, acts)
+    FIT_DIR.mkdir(parents=True, exist_ok=True)
+    for a in acts:
+        f = FIT_DIR / f"{a['activityId']}.zip"
+        if not f.exists() and (data := garmin.download_fit(client, a["activityId"])):
+            f.write_bytes(data)
+    log.info("Garmin activities %s..%s: %d", start, end, len(acts))
+
+
 def sync(days: int) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     con = store.connect(str(DB_PATH))
     client = garmin.make_client(TOKENSTORE)
     today = date.today()
     for i in range(days):
-        day = today - timedelta(days=i)
-        raw = garmin.fetch_day(client, day)
-        with _lock:
-            store.save_raw(con, day.isoformat(), "garmin", raw)
-            store.save_daily(con, day.isoformat(), "garmin", garmin.flatten(raw))
-        log.info("Garmin %s synced", day)
+        _sync_day(client, con, today - timedelta(days=i))
+    _sync_activities(client, con, today - timedelta(days=days - 1), today)
+    con.close()
+    publish_summary()
+
+
+def backfill(since: date, pause: float) -> None:
+    """Fetch all history once. Safe to stop and restart: stored days are skipped."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    con = store.connect(str(DB_PATH))
+    client = garmin.make_client(TOKENSTORE)
+    end = date.today()
+    start = since
+    while start <= end:  # activities in 90-day chunks
+        _sync_activities(client, con, start, min(start + timedelta(days=89), end))
+        start += timedelta(days=90)
+    day = since
+    while day <= end:
+        if not store.has_raw_day(con, day.isoformat(), "garmin"):
+            _sync_day(client, con, day)
+            time.sleep(pause)  # be gentle, Garmin rate-limits
+        day += timedelta(days=1)
     con.close()
     publish_summary()
 
@@ -120,14 +158,21 @@ def cmd_run(days: int) -> int:
 def main() -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
     p = argparse.ArgumentParser(prog="healthsync")
-    p.add_argument("command", choices=["login", "sync", "run"])
+    p.add_argument("command", choices=["login", "sync", "backfill", "run"])
     p.add_argument("--days", type=int, default=int(os.getenv("SYNC_DAYS", "3")),
                    help="how many recent days to (re)fetch per sync")
+    p.add_argument("--since", type=date.fromisoformat, help="backfill start, e.g. 2019-01-01")
+    p.add_argument("--pause", type=float, default=2.0, help="backfill seconds between days")
     a = p.parse_args()
     if a.command == "login":
         return cmd_login()
     if a.command == "sync":
         sync(a.days)
+        return 0
+    if a.command == "backfill":
+        if not a.since:
+            p.error("backfill needs --since YYYY-MM-DD")
+        backfill(a.since, a.pause)
         return 0
     return cmd_run(a.days)
 

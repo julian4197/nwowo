@@ -117,3 +117,38 @@ def test_hae_http(tmp_path):
     assert urllib.request.urlopen(ok).status == 200
     srv.shutdown()
     assert store.load_daily(store.connect(db), "2026-11-01")["2026-11-22"]["weight_kg"] == 80
+
+
+def test_backfill_skips_stored_days_and_saves_activities(tmp_path, monkeypatch):
+    import healthsync.__main__ as m
+
+    class Fake:
+        class ActivityDownloadFormat:
+            ORIGINAL = "orig"
+        days: list = []
+        def __getattr__(self, name):  # every daily endpoint
+            return lambda *a, **k: {}
+        def get_user_summary(self, d):
+            self.days.append(d)
+            return {"restingHeartRate": 50}
+        def get_activities_by_date(self, s, e):
+            return [{"activityId": 7, "startTimeLocal": "2026-01-02 10:00:00", "activityType": {"typeKey": "running"}}]
+        def download_activity(self, i, dl_fmt):
+            return b"zip"
+
+    fake = Fake()
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "h.db")
+    monkeypatch.setattr(m, "OUT_DIR", tmp_path / "out")
+    monkeypatch.setattr(m, "FIT_DIR", tmp_path / "fit")
+    monkeypatch.setattr(m.garmin, "make_client", lambda *a, **k: fake)
+    monkeypatch.setenv("RCLONE_REMOTE", "")
+    since = date.today() - timedelta(days=2)
+    con = store.connect(str(tmp_path / "h.db"))
+    store.save_raw(con, since.isoformat(), "garmin", {"summary": {}})
+    con.close()
+    m.backfill(since, pause=0)
+    assert since.isoformat() not in fake.days and len(fake.days) == 2
+    assert (tmp_path / "fit" / "7.zip").read_bytes() == b"zip"
+    con = store.connect(str(tmp_path / "h.db"))
+    assert con.execute("SELECT type FROM activities WHERE id = 7").fetchone() == ("running",)

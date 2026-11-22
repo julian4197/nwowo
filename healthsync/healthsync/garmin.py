@@ -44,7 +44,27 @@ def fetch_day(client, day: date) -> dict[str, Any]:
         "readiness": _safe(lambda: client.get_training_readiness(d), "training readiness"),
         "heart_rates": _safe(lambda: client.get_heart_rates(d), "heart rates"),
         "body": _safe(lambda: client.get_body_composition(d), "body composition"),
+        "stress": _safe(lambda: client.get_stress_data(d), "stress"),
+        "body_battery": _safe(lambda: client.get_body_battery_events(d), "body battery events"),
+        "respiration": _safe(lambda: client.get_respiration_data(d), "respiration"),
+        "spo2": _safe(lambda: client.get_spo2_data(d), "spo2"),
+        "steps": _safe(lambda: client.get_steps_data(d), "steps"),
+        "intensity": _safe(lambda: client.get_intensity_minutes_data(d), "intensity minutes"),
+        "training_status": _safe(lambda: client.get_training_status(d), "training status"),
+        "max_metrics": _safe(lambda: client.get_max_metrics(d), "max metrics"),
+        "hydration": _safe(lambda: client.get_hydration_data(d), "hydration"),
     }
+
+
+def fetch_activities(client, start: date, end: date) -> list[dict[str, Any]]:
+    """Activity summaries started between ``start`` and ``end`` (inclusive)."""
+    return _safe(lambda: client.get_activities_by_date(start.isoformat(), end.isoformat()), "activities") or []
+
+
+def download_fit(client, activity_id: Any) -> bytes | None:
+    """Original upload from the watch (a zip with the .fit file)."""
+    fmt = client.ActivityDownloadFormat.ORIGINAL
+    return _safe(lambda: client.download_activity(str(activity_id), dl_fmt=fmt), f"activity {activity_id} file")
 
 
 def _get(obj: Any, *path: str) -> Any:

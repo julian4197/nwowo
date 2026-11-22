@@ -11,7 +11,8 @@ Läuft als ein Docker-Container und berührt keine anderen Container.
 
 | Datei | Inhalt |
 |---|---|
-| `data/health.db` | Alle Rohdaten (Garmin-Antworten) und eine Zeile Kennzahlen pro Tag |
+| `data/health.db` | Alle Rohdaten (Garmin-Antworten je Tag: Schlaf, HRV, Puls, Stress, Body Battery, Atmung, SpO2, Schritte, Intensitätsminuten, Trainingsstatus, VO2max, Trinken), eine Zeile Kennzahlen pro Tag und alle Aktivitäten (Tabelle `activities`) |
+| `data/activities/<id>.zip` | Original-FIT-Datei jeder Aktivität |
 | `data/out/health_summary.json` | Letzte 14 Tage, 7- und 28-Tage-Schnitte, Warnsignale, Stundenpuls der letzten 3 Tage |
 | `data/out/health_daily.csv` | Eine Zeile pro Tag, letzte 90 Tage |
 
@@ -35,6 +36,9 @@ gehören nie ins Repo (`.gitignore` schließt sie aus).
    `docker compose run --rm healthsync login`
 5. Testlauf: `docker compose run --rm healthsync sync --days 30`
 6. Dauerbetrieb: `docker compose up -d --build`
+7. Einmalig die ganze Historie holen (läuft Stunden, darf abbrechen und neu starten,
+   gespeicherte Tage werden übersprungen):
+   `docker compose run -d --name healthsync-backfill healthsync backfill --since 2019-01-01`
 
 Danach synchronisiert der Container zu den Zeiten in `SYNC_TIMES`
 (Standard 07:30, 13:00 und 21:30) und holt jeweils die letzten `SYNC_DAYS` Tage
