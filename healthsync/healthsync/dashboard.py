@@ -10,7 +10,13 @@ page works without internet. Goals come from the plan file::
        "races": [{"name": "Silvesterlauf", "date": "2026-12-31",
                   "distance_km": 10.46, "target": "54:23", "previous": "54:23"}],
        "strength_per_week": 2,
-       "protein_g_per_kg": 1.6},
+       "protein_g_per_kg": 1.6,
+       "milestones": [   # stage goals, see milestones_of()
+         {"id": "kraft-klimmzug-3", "area": "kraft", "title": "3 saubere Klimmzüge", "due": "2027-01-31",
+          "metric": "max_pullups", "target": 3, "unit": "Wdh.", "baseline": 1, "source": "manual",
+          "achieved": null, "history": [["2026-11-23", 1]]},
+         {"id": "lauf-5k-test", "area": "laufen", "title": "5-km-Test unter 25:00", "due": "2026-12-12",
+          "metric": "time_5k", "target": "25:00", "baseline": "25:30", "source": "auto_strava"}]},
      "workouts": [...]}
 """
 from __future__ import annotations
@@ -86,6 +92,7 @@ def load_activities(con: sqlite3.Connection, since: str) -> list[dict[str, Any]]
             "sec": dur,
             "hr": a.get("averageHR"),
             "split_5k": a.get("fastestSplit_5000"),
+            "split_10k": a.get("fastestSplit_10000"),
         })
     return out
 
@@ -325,6 +332,7 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
     since_plan = [a for a in acts if plan_start and a["day"] >= plan_start]
     badges = badges_of(plan_items, year_weeks, since_plan, races, goals, acts)
 
+    milestones = milestones_of(goals, plan_items, year_weeks, since_plan, races, w_now, acts)
     upcoming = [p for p in plan_items if p["status"] in ("today", "upcoming", "late")]
     today_items = [p for p in plan_items if p["date"] == today.isoformat()]
     year_start = date(today.year, 1, 1).isoformat()
@@ -351,6 +359,7 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
         },
         "records": records,
         "badges": badges,
+        "milestones": milestones,
         "streak_best": best_streak(year_weeks),
         "streak_dots": [week_met(w) for w in year_weeks[-8:]],
         "streak_weeks": streak(year_weeks),
@@ -371,7 +380,8 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
             "weight_change_4w": round(w_now - w_4w, 1) if w_now and w_4w else None,
             "last_weigh": last_weigh,
             "protein_7d": protein_7d, "kcal_7d": kcal_7d,
-            "protein_target": round(g_per_kg * w_now) if w_now else None, "protein_g_per_kg": g_per_kg,
+            "protein_target": goals.get("protein_g_per_day") or (round(g_per_kg * w_now) if w_now else None),
+            "protein_g_per_kg": g_per_kg,
         },
     }
 
@@ -426,6 +436,117 @@ def badges_of(plan_items, weeks, since_plan, races, goals, acts) -> list[dict[st
     for b in out:
         b["progress"] = round(b["progress"], 2)
         b["achieved"] = b["progress"] >= 1
+    return out
+
+
+def _consecutive(flags: list[bool]) -> int:
+    best = cur = 0
+    for f in flags:
+        cur = cur + 1 if f else 0
+        best = max(best, cur)
+    return best
+
+
+GROUPS = {"laufen": "Laufen", "kraft": "Kraft", "koerper": "Körper"}
+
+
+def _num_or_time(v: Any) -> float | None:
+    if v is None or v == "":
+        return None
+    if isinstance(v, str) and ":" in v:
+        return hms(v)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def milestones_of(goals, plan_items, year_weeks, since_plan, races, weight_now=None,
+                  acts=None) -> list[dict[str, Any]]:
+    """Stage goals from plan.json ``goals.milestones`` with progress from baseline to target.
+
+    Item: {"id", "area" (laufen/kraft/koerper), "title", "due", "metric", "target",
+    "unit", "baseline", "source" (auto_* or manual), "achieved" (date or null),
+    optional "current" / "history" [[day, value]] for manual metrics}.
+    Times ("mm:ss") count as lower-is-better.
+    """
+    plan_start = min((p["date"] for p in plan_items), default=None)
+    wk = [w for w in year_weeks if plan_start and w["start"] >= week_start(date.fromisoformat(plan_start)).isoformat()]
+    runs = [a for a in since_plan if a["sport"] == "running"]
+    per_week = goals.get("strength_per_week", 2)
+
+    def best_time(dist_km: float, split_key: str) -> float | None:
+        c = [a[split_key] for a in runs if a.get(split_key)]
+        c += [a["sec"] * dist_km / a["km"] for a in runs
+              if a["sec"] and dist_km * 0.98 <= a["km"] <= dist_km * 1.08]
+        return min(c) if c else None
+
+    closed = [w for w in wk if not w["current"]]
+    cur_w = wk[-1] if wk and wk[-1]["current"] else None
+    auto = {
+        "weeks_plan_met_in_row": streak(wk) if wk else 0,
+        "strength_weeks_in_row": _consecutive([w["strength"] >= per_week for w in closed]
+                                              + ([True] if cur_w and cur_w["strength"] >= per_week else [])),
+        "strength_sessions": sum(1 for a in since_plan if a["sport"] == "strength"),
+        "longest_run_km": max((a["km"] for a in runs), default=None),
+        "time_5k": best_time(5.0, "split_5k"),
+        "time_10k": best_time(10.0, "split_10k"),
+        "run_week_km": max((w["run_km"] for w in wk), default=None),
+        "run_km_total": round(sum(a["km"] for a in runs), 1),
+        "weight_week_avg_kg": weight_now,
+    }
+    out = []
+    for m in goals.get("milestones") or []:
+        metric = m.get("metric", "")
+        target = _num_or_time(m.get("target"))
+        base = _num_or_time(m.get("baseline", m.get("start")))
+        is_time = isinstance(m.get("target"), str) and ":" in m["target"]
+        lower = bool(m.get("lower_is_better", is_time))
+        note = None
+        current = None
+        if metric == "race_time":
+            race = next((r for r in races if r["name"] in (m.get("race") or m.get("title", ""))
+                         or m.get("title", "").startswith(r["name"].split()[0])), None)
+            rd = race["date"] if race else m.get("due")
+            result = [a for a in (acts or []) if a["sport"] == "running" and a["day"] == rd and a["km"] > 5]
+            if result:
+                current, note = max(a["sec"] for a in result), "Ergebnis"
+            elif race and race.get("prediction"):
+                current, note = race["prediction"]["sec"], "Prognose"
+        elif metric in auto:
+            current = auto[metric]
+        else:  # manual: last history entry, else "current", else baseline (last known value)
+            hist = m.get("history") or []
+            current = _num_or_time(hist[-1][1]) if hist else _num_or_time(m.get("current"))
+            if current is None:
+                current = base
+        if is_time and base is not None and target is not None and base <= target:
+            base = target * 1.08  # e.g. baseline equals the target: measure from +8 %
+        achieved = bool(m.get("achieved"))
+        prog = 0.0
+        if achieved:
+            prog = 1.0
+        elif current is not None and target is not None:
+            if lower:
+                ok = current <= target
+                b0 = base if base is not None else target * 1.1
+                prog = 1.0 if ok else (b0 - current) / (b0 - target) if b0 != target else 0
+            else:
+                ok = current >= target
+                b0 = base if base is not None else 0
+                prog = 1.0 if ok else (current - b0) / (target - b0) if target != b0 else 0
+            prog = max(0.0, min(1.0, prog))
+        fmt = (lambda v: fmt_time(v) if v is not None else None) if is_time else \
+              (lambda v: (round(v, 1) if isinstance(v, float) else v))
+        out.append({
+            "id": m.get("id"), "group": GROUPS.get(m.get("area"), m.get("group") or "Ziele"),
+            "title": m.get("title"), "icon": m.get("icon"), "unit": "" if is_time else m.get("unit", ""),
+            "due": m.get("due"), "source": m.get("source"), "note": note,
+            "current": fmt(current), "target": fmt(target), "baseline": fmt(base),
+            "progress": round(prog, 2), "achieved": prog >= 1,
+            "history": m.get("history") or [],
+        })
+    out.sort(key=lambda x: (x["group"], x["due"] or "9999"))
     return out
 
 

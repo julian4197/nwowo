@@ -36,7 +36,16 @@ def _db(tmp_path):
 
 PLAN = {
     "goals": {"races": [{"name": "Silvesterlauf", "date": "2026-12-31", "distance_km": 10.46,
-                         "target": "54:23"}], "strength_per_week": 2},
+                         "target": "54:23"}], "strength_per_week": 2,
+              "milestones": [
+                  {"id": "pu", "area": "kraft", "title": "3 Klimmzüge", "metric": "max_pullups", "target": 3,
+                   "baseline": 1, "source": "manual", "history": [["2026-11-25", 2]]},
+                  {"id": "lr", "area": "laufen", "title": "8 km", "metric": "longest_run_km", "target": 8,
+                   "baseline": 3},
+                  {"id": "k5", "area": "laufen", "title": "5 km < 25:00", "metric": "time_5k", "target": "25:00",
+                   "baseline": "27:00"},
+                  {"id": "sv", "area": "laufen", "title": "Silvesterlauf unter 54:23", "metric": "race_time",
+                   "target": "54:23", "baseline": "54:23"}]},
     "workouts": [
         {"id": "a", "date": "2026-11-23", "sport": "running", "name": "Locker"},
         {"id": "b", "date": "2026-11-23", "sport": "strength", "name": "Kraft A"},
@@ -63,6 +72,11 @@ def test_build(tmp_path):
     assert race["prediction"]["time"].startswith("54:")
     assert d["body"]["protein_target"] == 128
     assert d["today_plan"][0]["name"] == "Kraft B"
+    ms = {m["id"]: m for m in d["milestones"]}
+    assert ms["pu"]["progress"] == 0.5 and ms["pu"]["group"] == "Kraft"
+    assert ms["lr"]["current"] == 5.0 and ms["lr"]["progress"] == 0.4
+    assert ms["k5"]["current"] == "33:00" and ms["k5"]["progress"] == 0  # only runs since plan start
+    assert ms["sv"]["target"] == "54:23" and ms["sv"]["note"] == "Prognose"
 
 
 def test_build_without_plan_or_data(tmp_path):
