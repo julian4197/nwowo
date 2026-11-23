@@ -19,7 +19,7 @@ def _db(tmp_path):
         store.save_daily(con, d, "garmin", {"resting_hr": 50, "hrv_last_night": 50, "sleep_min": 450,
                                             "body_battery_high": 80, "hrv_baseline_low": 45,
                                             "hrv_baseline_high": 60})
-        store.save_daily(con, d, "healthfit", {"weight_kg": 80 - i * 0.02, "protein_g": 120})
+        store.save_daily(con, d, "healthfit", {"weight_kg": 80 - i * 0.02, "protein_g": 120, "body_fat_pct": 20})
     acts = [
         _act(1, "2026-11-23", "running", 5, 33),            # Mo planned run
         _act(2, "2026-11-25", "strength_training", 0, 35),  # Kraft A done on Wed instead of Mon
@@ -71,6 +71,7 @@ def test_build(tmp_path):
     # 5 km split in 25:00 -> Riegel to 10.46 km ~ 54:22
     assert race["prediction"]["time"].startswith("54:")
     assert d["body"]["protein_target"] == 128
+    assert d["body"]["fat_now"] == 20 and d["body"]["lean_kg"] == round(d["body"]["weight_now"] * 0.8, 1)
     assert d["today_plan"][0]["name"] == "Kraft B"
     ms = {m["id"]: m for m in d["milestones"]}
     assert ms["pu"]["progress"] == 0.5 and ms["pu"]["group"] == "Kraft"

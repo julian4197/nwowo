@@ -319,6 +319,9 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
     g_per_kg = goals.get("protein_g_per_kg", 1.6)
     last_weigh = next((d for d, v in reversed(w_ser) if v is not None), None)
     nutrition = nutrition_of(con, days, today)
+    f_ser = _series(days, "body_fat_pct", today - timedelta(days=89), today)
+    fat_now = _last(f_ser)
+    lean = round(w_now * (1 - fat_now / 100), 1) if w_now and fat_now else None
 
     # Races.
     races = []
@@ -416,6 +419,7 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
             "protein_target": goals.get("protein_g_per_day") or (round(g_per_kg * w_now) if w_now else None),
             "protein_g_per_kg": g_per_kg,
             "nutrition": nutrition,
+            "fat": f_ser, "fat_avg": _rolling(f_ser), "fat_now": fat_now, "lean_kg": lean,
         },
     }
 

@@ -468,9 +468,11 @@ function vKoerper(D) {
   return `<header class="top"><h1>Körper</h1></header>
     <section class="panel"><div class="panel-head"><span class="label">Gewicht</span><span class="small muted">Punkte Tageswerte, Linie 7-Tage-Schnitt</span></div>
       <div class="kpis"><div><div class="v">${count(B.weight_now, 1)}<small>kg</small></div><span class="small muted">7-Tage-Schnitt</span></div>
-        <div><div class="v" style="font-size:22px">${B.weight_change_4w == null ? "–" : (B.weight_change_4w > 0 ? "+" : "") + nf(B.weight_change_4w, 1)}<small>kg</small></div><span class="small muted">in 4 Wochen</span></div></div>
+        <div><div class="v" style="font-size:22px">${B.weight_change_4w == null ? "–" : (B.weight_change_4w > 0 ? "+" : "") + nf(B.weight_change_4w, 1)}<small>kg</small></div><span class="small muted">in 4 Wochen</span></div>
+        ${B.fat_now != null ? `<div><div class="v" style="font-size:22px">${nf(B.fat_now)}<small>%</small></div><span class="small muted">Körperfett${B.lean_kg ? ` · ${nf(B.lean_kg, 1)} kg fettfrei` : ""}</span></div>` : ""}</div>
       ${area(B.weight, { color: "var(--strength)", trend: B.weight_avg, fmt: "1", h: 140 })}
-      <p class="note">${B.last_weigh ? `Zuletzt gewogen: ${wdd(B.last_weigh)}<br>` : ""}Tageswerte schwanken durch Wasser um 1–2 kg. Für Muskelaufbau langsam zunehmen, etwa 0,25–0,5 % des Körpergewichts pro Woche (Iraki et al. 2019, Sports 7:154).</p></section>
+      ${B.fat.filter(p => p[1] != null).length >= 2 ? `<div class="panel-head" style="margin-top:14px"><span class="label">Körperfett</span><span class="small muted">%, Linie 7-Tage-Schnitt</span></div>${area(B.fat, { color: "var(--bike)", trend: B.fat_avg, fmt: "1", h: 90 })}` : ""}
+      <p class="note">${B.last_weigh ? `Zuletzt gewogen: ${wdd(B.last_weigh)}<br>` : ""}Tageswerte schwanken durch Wasser um 1–2 kg. Körperfett per Bioimpedanz-Waage schwankt mit Wasserhaushalt und Tageszeit, also immer morgens nüchtern wiegen und nur den Trend lesen. Für Muskelaufbau langsam zunehmen, etwa 0,25–0,5 % des Körpergewichts pro Woche (Iraki et al. 2019, Sports 7:154).</p></section>
     ${nutrition(B)}`;
 }
 
