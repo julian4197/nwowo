@@ -180,6 +180,10 @@ nav button.on { color: var(--accent); }
 .foot button { border: 0; background: none; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; }
 @media (max-width: 360px) { .race-days { font-size: 80px; } .week { grid-template-columns: 92px 1fr; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.macro{display:flex;height:12px;border-radius:6px;overflow:hidden;gap:2px;margin-top:6px}
+.macro i{display:block;height:100%}
+.macro-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;color:var(--muted)}
+.macro-legend b{color:var(--ink);font-weight:600}
 </style>
 </head>
 <body>
@@ -466,12 +470,46 @@ function vKoerper(D) {
       <div class="kpis"><div><div class="v">${count(B.weight_now, 1)}<small>kg</small></div><span class="small muted">7-Tage-Schnitt</span></div>
         <div><div class="v" style="font-size:22px">${B.weight_change_4w == null ? "–" : (B.weight_change_4w > 0 ? "+" : "") + nf(B.weight_change_4w, 1)}<small>kg</small></div><span class="small muted">in 4 Wochen</span></div></div>
       ${area(B.weight, { color: "var(--strength)", trend: B.weight_avg, fmt: "1", h: 140 })}
-      <p class="note">${B.last_weigh ? `Zuletzt gewogen am ${wdd(B.last_weigh)}. ` : ""}Tageswerte schwanken durch Wasser um 1–2 kg. Für Muskelaufbau langsam zunehmen, etwa 0,25–0,5 % des Körpergewichts pro Woche (Iraki et al. 2019, Sports 7:154).</p></section>
-    <section class="panel"><div class="panel-head"><span class="label">Protein</span><span class="small muted">Ø 7 Tage</span></div>
-      <div class="kpis"><div><div class="v">${B.protein_7d != null ? count(B.protein_7d) : "–"}<small>/ ${B.protein_target ?? "–"} g</small></div><span class="small muted">pro Tag</span></div>
-        <div><div class="v" style="font-size:22px">${B.kcal_7d ? nf(B.kcal_7d) : "–"}<small>kcal</small></div><span class="small muted">pro Tag</span></div></div>
-      ${bar(pr, "var(--racket)")}
-      <p class="note">${B.protein_7d == null ? "Keine Yazio-Einträge in den letzten 7 Tagen. " : ""}Etwa 1,6 g Protein pro kg Körpergewicht reichen für den Muskelaufbau, mehr bringt im Schnitt kaum zusätzlich (Morton et al. 2018, BJSM 52:376).</p></section>`;
+      <p class="note">${B.last_weigh ? `Zuletzt gewogen: ${wdd(B.last_weigh)}<br>` : ""}Tageswerte schwanken durch Wasser um 1–2 kg. Für Muskelaufbau langsam zunehmen, etwa 0,25–0,5 % des Körpergewichts pro Woche (Iraki et al. 2019, Sports 7:154).</p></section>
+    ${nutrition(B)}`;
+}
+
+function dayCols(series, target, color, unit) {
+  const W = 340, H = 110, n = series.length, bw = (W - 30) / n, L = 30;
+  const max = Math.max(1, ...series.map(p => p[1] || 0), target || 0) * 1.12, y = v => H - v / max * H;
+  let s = `<svg viewBox="0 0 ${W} ${H + 18}" role="img" aria-label="${esc(unit)} pro Tag">`;
+  series.forEach(([d, v], i) => { const X = L + i * bw;
+    if (v) s += `<rect x="${X + 1}" y="${y(v)}" width="${Math.max(1, bw - 2)}" height="${H - y(v)}" rx="2" fill="${color}" opacity="${target && v >= target ? 1 : .45}"><title>${wdd(d)}: ${nf(v)} ${unit}</title></rect>`;
+    else s += `<rect x="${X + 1}" y="${H - 2}" width="${Math.max(1, bw - 2)}" height="2" rx="1" fill="var(--sunk)"/>`;
+    if ((n - 1 - i) % 7 === 0) s += `<text x="${X + bw / 2}" y="${H + 14}" text-anchor="middle">${dd(d)}</text>`; });
+  if (target) s += `<line x1="${L}" x2="${W}" y1="${y(target)}" y2="${y(target)}" stroke="var(--ink)" stroke-opacity=".55" stroke-dasharray="3 4"/>
+    <text x="${L - 4}" y="${y(target) + 3.5}" text-anchor="end">${nf(target)}</text>`;
+  return s + "</svg>";
+}
+
+function nutrition(B) {
+  const N = B.nutrition || {}, A = N.avg_7d || {}, S = N.series || {}, M = N.macro_pct, T = B.protein_target;
+  const p7 = A.protein_g ?? B.protein_7d, pr = T && p7 != null ? p7 / T : 0;
+  const hit = (S.protein_g || []).filter(p => p[1] && T && p[1] >= T).length;
+  const stale = !N.logged_7d;
+  const head = `<section class="panel"><div class="panel-head"><span class="label">Ernährung</span><span class="small muted">Yazio · Ø Tage mit Eintrag</span></div>`;
+  if (!N.logged_28d) return head + `<p class="lead" style="margin:4px 0 0">Noch keine Yazio-Werte aus den letzten 4 Wochen.</p>
+    <p class="note">${N.last_day ? `Letzter Eintrag: ${wdd(N.last_day)}.<br>` : ""}Trag Mahlzeiten in Yazio ein. Yazio schreibt sie in Apple Health, HealthFit exportiert sie ins Google Sheet und das Dashboard holt sie bei jedem Sync. Etwa 1,6 g Protein pro kg Körpergewicht reichen für den Muskelaufbau (Morton et al. 2018, BJSM 52:376).</p></section>`;
+  const seg = M ? `<div class="macro">${[["protein_g", "Protein", "var(--racket)"], ["carbs_g", "Kohlenhydrate", "var(--bike)"], ["fat_g", "Fett", "var(--strength)"]]
+      .map(([k, l, c]) => `<i style="width:${M[k]}%;background:${c}" title="${l} ${M[k]} %"></i>`).join("")}</div>
+    <div class="macro-legend small">${[["protein_g", "Protein", "var(--racket)"], ["carbs_g", "Kohlenhydrate", "var(--bike)"], ["fat_g", "Fett", "var(--strength)"]]
+      .map(([k, l, c]) => `<span><span class="dot" style="background:${c}"></span>${l} <b>${nf(A[k])} g</b> · ${M[k]} %</span>`).join("")}</div>` : "";
+  return head + `
+    <div class="kpis"><div><div class="v">${p7 != null ? count(p7) : "–"}<small>/ ${T ?? "–"} g</small></div><span class="small muted">Protein pro Tag</span></div>
+      <div><div class="v" style="font-size:22px">${A.kcal_in ? nf(A.kcal_in) : "–"}<small>kcal</small></div><span class="small muted">pro Tag</span></div>
+      <div><div class="v" style="font-size:22px">${N.logged_7d}<small>/ 7</small></div><span class="small muted">Tage erfasst</span></div></div>
+    ${bar(pr, "var(--racket)")}
+    <div class="panel-head" style="margin-top:16px"><span class="label">Protein pro Tag</span><span class="small muted">${hit} von ${N.logged_28d} Tagen am Ziel</span></div>
+    ${dayCols(S.protein_g || [], T, "var(--racket)", "g")}
+    ${seg ? `<div class="panel-head" style="margin-top:14px"><span class="label">Makros</span><span class="small muted">Anteil an den kcal, Ø 7 Tage</span></div>${seg}` : ""}
+    <div class="panel-head" style="margin-top:14px"><span class="label">Kalorien pro Tag</span><span class="small muted">28 Tage</span></div>
+    ${dayCols(S.kcal_in || [], null, "var(--accent)", "kcal")}
+    <p class="note">${stale ? `Diese Woche noch kein Eintrag (letzter: ${wdd(N.last_day)}).<br>` : ""}Volle Balken: Tag mit mindestens ${T ?? "–"} g Protein. Etwa 1,6 g pro kg Körpergewicht reichen für den Muskelaufbau, mehr bringt im Schnitt kaum zusätzlich (Morton et al. 2018, BJSM 52:376). Für langsamen Aufbau reicht ein kleiner Überschuss von etwa 5–10 % über dem Bedarf (Iraki et al. 2019, Sports 7:154).</p></section>`;
 }
 
 /* ---------- app ---------- */

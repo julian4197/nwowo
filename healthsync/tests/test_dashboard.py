@@ -114,3 +114,16 @@ def test_dashboard_http(tmp_path):
     assert data["races"][0]["name"] == "Silvesterlauf"
     assert urllib.request.urlopen(base + "/icon.png").read()[:4] == b"\x89PNG"
     srv.shutdown()
+
+
+def test_nutrition(tmp_path):
+    con = store.connect(str(tmp_path / "n.db"))
+    store.save_daily(con, "2026-08-07", "healthfit", {"kcal_in": 2000, "protein_g": 90})
+    n = dashboard.build(con, None, TODAY)["body"]["nutrition"]
+    assert n["logged_28d"] == 0 and n["last_day"] == "2026-08-07"
+    for i, p in enumerate([160, 140, 150]):
+        store.save_daily(con, (TODAY - timedelta(days=i)).isoformat(), "healthfit",
+                         {"kcal_in": 2500, "protein_g": p, "carbs_g": 300, "fat_g": 80})
+    n = dashboard.build(con, {"goals": {"protein_g_per_day": 150}}, TODAY)["body"]["nutrition"]
+    assert n["logged_7d"] == 3 and n["avg_7d"]["protein_g"] == 150 and n["last_day"] == TODAY.isoformat()
+    assert sum(n["macro_pct"].values()) in (99, 100, 101) and len(n["series"]["protein_g"]) == 28

@@ -232,6 +232,38 @@ def _rolling(series, n=7) -> list[list[Any]]:
     return out
 
 
+NUTRIENTS = ("kcal_in", "protein_g", "carbs_g", "fat_g")
+
+
+def nutrition_of(con: sqlite3.Connection, days: dict[str, dict[str, Any]], today: date) -> dict[str, Any]:
+    """Yazio values (via HealthFit sheet): 28-day series, 7-day averages of logged days, macro split."""
+    start = today - timedelta(days=27)
+    series = {m: _series(days, m, start, today) for m in NUTRIENTS}
+    logged = [d for d, v in series["kcal_in"] if v] or [d for d, v in series["protein_g"] if v]
+    week = (today - timedelta(days=6)).isoformat()
+    avg7 = {}
+    for m in NUTRIENTS:
+        vals = [v for d, v in series[m] if d >= week and v]
+        avg7[m] = round(mean(vals), 1) if vals else None
+    # Macro energy split (4/4/9 kcal per g) over the last 7 logged days.
+    macro = None
+    g = {m: avg7[m] for m in ("protein_g", "carbs_g", "fat_g")}
+    if all(g.values()):
+        kc = {"protein_g": g["protein_g"] * 4, "carbs_g": g["carbs_g"] * 4, "fat_g": g["fat_g"] * 9}
+        tot = sum(kc.values())
+        macro = {m: round(v / tot * 100) for m, v in kc.items()}
+    last = None
+    for (day, metrics) in con.execute("SELECT day, metrics FROM daily ORDER BY day DESC"):
+        m = json.loads(metrics)
+        if m.get("kcal_in") or m.get("protein_g"):
+            last = day
+            break
+    return {
+        "series": series, "avg_7d": avg7, "macro_pct": macro, "last_day": last,
+        "logged_7d": sum(1 for d in logged if d >= week), "logged_28d": len(logged),
+    }
+
+
 def _last(series):
     for _, v in reversed(series):
         if v is not None:
@@ -286,6 +318,7 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
     kcal_7d = s["baselines"].get("kcal_in", {}).get("avg_7d")
     g_per_kg = goals.get("protein_g_per_kg", 1.6)
     last_weigh = next((d for d, v in reversed(w_ser) if v is not None), None)
+    nutrition = nutrition_of(con, days, today)
 
     # Races.
     races = []
@@ -382,6 +415,7 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
             "protein_7d": protein_7d, "kcal_7d": kcal_7d,
             "protein_target": goals.get("protein_g_per_day") or (round(g_per_kg * w_now) if w_now else None),
             "protein_g_per_kg": g_per_kg,
+            "nutrition": nutrition,
         },
     }
 
