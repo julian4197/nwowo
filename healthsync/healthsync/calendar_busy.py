@@ -55,6 +55,21 @@ def from_component(comp, calendar: str, tz: ZoneInfo) -> dict[str, Any] | None:
     return {"start": s, "end": e, "allDay": all_day, "title": str(comp.get("SUMMARY", "")), "calendar": calendar}
 
 
+def _no_http3(client) -> None:
+    """caldav uses niquests, which tries HTTP/3 (QUIC over UDP) with iCloud.
+    On the UGREEN NAS kernel that fails with OSError 90 (UDP GRO), so use
+    HTTP/1.1 and HTTP/2 over TCP only. Auth and headers are passed per request,
+    so swapping the session is safe."""
+    try:
+        import niquests
+    except ImportError:  # older caldav uses requests, which has no HTTP/3
+        return
+    old = getattr(client, "session", None)
+    client.session = niquests.Session(disable_http3=True)
+    if old is not None:
+        old.close()
+
+
 def fetch(days: int | None = None) -> list[dict[str, Any]]:
     import caldav
 
@@ -64,6 +79,7 @@ def fetch(days: int | None = None) -> list[dict[str, Any]]:
     start = datetime.combine(date.today(), time.min, tz)
     end = start + timedelta(days=days)
     client = caldav.DAVClient(url=URL, username=os.environ["ICLOUD_USER"], password=os.environ["ICLOUD_APP_PASSWORD"])
+    _no_http3(client)
     out: list[dict[str, Any]] = []
     for cal in client.principal().calendars():
         name = cal.get_display_name() or ""

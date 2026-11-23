@@ -307,3 +307,12 @@ END:VCALENDAR
                         "allDay": False, "title": "Hundeschule", "calendar": "Gemeinsam"}
     assert items[1]["allDay"] and items[1]["start"] == "2026-12-24" and items[1]["end"] == "2026-12-27"
     assert items[2] is None
+
+
+def test_caldav_client_without_http3():
+    import caldav
+    from healthsync.calendar_busy import _no_http3
+
+    c = caldav.DAVClient(url="https://caldav.icloud.com/", username="u", password="p")
+    _no_http3(c)
+    assert c.session._disable_http3
