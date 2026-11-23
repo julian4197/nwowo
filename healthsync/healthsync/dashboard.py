@@ -16,6 +16,7 @@ page works without internet. Goals come from the plan file::
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -296,6 +297,34 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
             "date_tentative": bool(r.get("date_tentative")),
         })
 
+    # Race prep progress: planned sessions up to the race, how many are done.
+    for r in races:
+        until = [p for p in plan_items if p["date"] <= r["date"]]
+        r["plan_total"] = len(until)
+        r["plan_done"] = sum(p["status"] == "done" for p in until)
+        r["plan_start"] = min((p["date"] for p in until), default=None)
+
+    ws_today = week_start(today)
+    week_days = [ws_today + timedelta(days=i) for i in range(7)]
+    intensity = 0
+    for d in week_days:
+        m = days.get(d.isoformat(), {})
+        intensity += (m.get("intensity_min_moderate") or 0) + 2 * (m.get("intensity_min_vigorous") or 0)
+    week_daily = []
+    for d in week_days:
+        ds = d.isoformat()
+        day_acts = [a for a in recent_acts if a["day"] == ds and a["sport"] != "walking"]
+        week_daily.append({"day": ds, "min": round(sum(a["min"] for a in day_acts)),
+                           "run_km": round(sum(a["km"] for a in day_acts if a["sport"] == "running"), 1),
+                           "sports": sorted({a["sport"] for a in day_acts}),
+                           "planned": [p["sport"] for p in plan_items if p["date"] == ds]})
+
+    year_weeks = weeks_overview(acts, plan_items, today, n=52)
+    records = records_of(acts, year_weeks)
+    plan_start = min((p["date"] for p in plan_items), default=None)
+    since_plan = [a for a in acts if plan_start and a["day"] >= plan_start]
+    badges = badges_of(plan_items, year_weeks, since_plan, races, goals, acts)
+
     upcoming = [p for p in plan_items if p["status"] in ("today", "upcoming", "late")]
     today_items = [p for p in plan_items if p["date"] == today.isoformat()]
     year_start = date(today.year, 1, 1).isoformat()
@@ -303,6 +332,7 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
 
     return {
         "generated_at": datetime.now().isoformat(timespec="minutes"),
+        "name": goals.get("name") or os.getenv("DASHBOARD_NAME"),
         "today": today.isoformat(),
         "latest_day": s["latest_day"],
         "ampel": ampel(flags, latest),
@@ -315,8 +345,15 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
             "planned": cur["planned"], "done": cur["planned_done"], "sessions": cur["sessions"],
             "run_km": cur["run_km"], "strength": cur["strength"],
             "strength_target": goals.get("strength_per_week", 2),
+            "intensity_min": intensity, "intensity_target": goals.get("intensity_min_per_week", 150),
+            "days": week_daily,
+            "run_km_avg4": round(mean(w["run_km"] for w in weeks[-5:-1]), 1),
         },
-        "streak_weeks": streak(weeks),
+        "records": records,
+        "badges": badges,
+        "streak_best": best_streak(year_weeks),
+        "streak_dots": [week_met(w) for w in year_weeks[-8:]],
+        "streak_weeks": streak(year_weeks),
         "adherence_pct": round(100 * sum(p["status"] == "done" for p in total_planned) / len(total_planned))
         if total_planned else None,
         "weeks": weeks,
@@ -337,6 +374,59 @@ def build(con: sqlite3.Connection, plan: dict[str, Any] | None, today: date) -> 
             "protein_target": round(g_per_kg * w_now) if w_now else None, "protein_g_per_kg": g_per_kg,
         },
     }
+
+
+def best_streak(weeks: list[dict[str, Any]]) -> int:
+    best = cur = 0
+    for w in weeks:
+        cur = cur + 1 if week_met(w) else (cur if w["current"] else 0)
+        best = max(best, cur)
+    return best
+
+
+def records_of(acts, weeks) -> dict[str, Any]:
+    runs = [a for a in acts if a["sport"] == "running" and a["km"] > 0]
+    longest = max(runs, key=lambda a: a["km"], default=None)
+    splits = [a for a in runs if a.get("split_5k")]
+    fastest = min(splits, key=lambda a: a["split_5k"], default=None)
+    best_week = max(weeks, key=lambda w: w["run_km"], default=None)
+    most = max(weeks, key=lambda w: w["sessions"], default=None)
+    return {
+        "longest_run": {"km": longest["km"], "day": longest["day"]} if longest else None,
+        "fastest_5k": {"time": fmt_time(fastest["split_5k"]), "day": fastest["day"]} if fastest else None,
+        "best_week_km": {"km": best_week["run_km"], "week": best_week["start"]} if best_week and best_week["run_km"] else None,
+        "most_sessions": {"n": most["sessions"], "week": most["start"]} if most and most["sessions"] else None,
+    }
+
+
+def badges_of(plan_items, weeks, since_plan, races, goals, acts) -> list[dict[str, Any]]:
+    """Milestones with progress 0..1, ordered: almost reached first."""
+    strk = streak(weeks)
+    perfect = any(w["planned"] and w["planned_done"] >= w["planned"] for w in weeks)
+    km = sum(a["km"] for a in since_plan if a["sport"] == "running")
+    strength = sum(1 for a in since_plan if a["sport"] == "strength")
+    hard = [a for a in since_plan if a["sport"] == "running" and (a.get("hr") or 0) >= goals.get("effort_hr_min", 170)]
+    out = [
+        {"icon": "⭐", "title": "Perfekte Woche", "desc": "Alle geplanten Einheiten einer Woche", "progress": 1.0 if perfect else
+         max((w["planned_done"] / w["planned"] for w in weeks if w["planned"]), default=0)},
+        {"icon": "🔥", "title": "4 Wochen am Stück", "desc": "Vier Wochen in Folge geschafft", "progress": min(1, strk / 4)},
+        {"icon": "🚀", "title": "12 Wochen am Stück", "desc": "Eine echte Routine", "progress": min(1, strk / 12)},
+        {"icon": "🛣️", "title": "100 km", "desc": "Gelaufen seit Planstart", "progress": min(1, km / 100), "value": round(km)},
+        {"icon": "💪", "title": "10 × Kraft", "desc": "Krafteinheiten seit Planstart", "progress": min(1, strength / 10),
+         "value": strength},
+        {"icon": "⚡", "title": "Harter Lauf", "desc": "Erster Lauf mit Ø-Puls über "
+         f"{goals.get('effort_hr_min', 170)}, z. B. der 5-km-Test", "progress": 1.0 if hard else 0},
+    ]
+    for r in goals.get("races") or []:
+        target = hms(r["target"])
+        done = any(a["sport"] == "running" and a["day"] == r["date"] and a["km"] >= r["distance_km"] * 0.95
+                   and a["sec"] and a["sec"] * (r["distance_km"] / a["km"]) <= target for a in acts)
+        out.append({"icon": "🏆", "title": f"{r['name']} < {fmt_time(target)}", "desc": "Das große Ziel",
+                    "progress": 1.0 if done else 0})
+    for b in out:
+        b["progress"] = round(b["progress"], 2)
+        b["achieved"] = b["progress"] >= 1
+    return out
 
 
 def load_plan(path: Path) -> dict[str, Any] | None:
